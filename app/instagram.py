@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
 import re
@@ -59,13 +60,29 @@ class InstagramClient:
         except Exception as exc:
             raise InstagramAuthenticationError("INSTAGRAM_SESSION_B64 is not valid base64") from exc
 
+        if not raw:
+            raise InstagramAuthenticationError("Instagram session is empty")
+
         self.session_path.write_bytes(raw)
 
         try:
-            loader.load_session_from_file(self.username, str(self.session_path))
+            # The previous version of this project used a JSON cookie export
+            # (instagram.json). Keep supporting that format so the existing
+            # session can be reused without logging in again.
+            stripped = raw.lstrip()
+            if stripped.startswith(b"{") or stripped.startswith(b"["):
+                self._load_json_cookies(loader, raw)
+            else:
+                # Native Instaloader session file (pickle) format.
+                loader.load_session_from_file(self.username, str(self.session_path))
+
             logged_in = loader.test_login()
+        except InstagramAuthenticationError:
+            raise
         except Exception as exc:
-            raise InstagramAuthenticationError(f"Instagram session could not be loaded: {exc}") from exc
+            raise InstagramAuthenticationError(
+                f"Instagram session could not be loaded: {exc}"
+            ) from exc
 
         if logged_in != self.username:
             raise InstagramAuthenticationError(
@@ -74,6 +91,67 @@ class InstagramClient:
 
         logger.info("Instagram session loaded for @%s", self.username)
         return loader
+
+    def _load_json_cookies(self, loader: instaloader.Instaloader, raw: bytes) -> None:
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise InstagramAuthenticationError(
+                "INSTAGRAM_SESSION_B64 contains JSON, but the JSON is invalid"
+            ) from exc
+
+        cookies = data.get("cookies") if isinstance(data, dict) else data
+
+        if isinstance(cookies, dict):
+            # Simple mapping: {"sessionid": "...", "csrftoken": "..."}
+            cookie_items = [
+                {"name": name, "value": value}
+                for name, value in cookies.items()
+            ]
+        elif isinstance(cookies, list):
+            cookie_items = cookies
+        else:
+            raise InstagramAuthenticationError(
+                "Instagram JSON session must contain a 'cookies' list or cookie mapping"
+            )
+
+        loaded = 0
+        for cookie in cookie_items:
+            if not isinstance(cookie, dict):
+                continue
+
+            name = cookie.get("name")
+            value = cookie.get("value")
+            if not name or value is None:
+                continue
+
+            domain = cookie.get("domain") or ".instagram.com"
+            path = cookie.get("path") or "/"
+
+            # Never trust a cookie export to point at an unrelated host.
+            if "instagram.com" not in domain.lower():
+                domain = ".instagram.com"
+
+            loader.context._session.cookies.set(
+                str(name),
+                str(value),
+                domain=domain,
+                path=path,
+            )
+            loaded += 1
+
+        if loaded == 0:
+            raise InstagramAuthenticationError(
+                "No Instagram cookies were found in INSTAGRAM_SESSION_B64"
+            )
+
+        # These headers were already used by the old working implementation.
+        loader.context._session.headers.update({
+            "User-Agent": "Mozilla/5.0",
+            "X-IG-App-ID": "936619743392459",
+            "Referer": "https://www.instagram.com/",
+        })
+        logger.info("Loaded %d Instagram cookies from JSON session", loaded)
 
     @staticmethod
     def validate_url(url: str) -> str:
