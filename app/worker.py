@@ -63,6 +63,7 @@ class DownloadWorker:
             try:
                 job = await self.queue.claim()
                 if job is None:
+                    await asyncio.sleep(1)
                     continue
                 await self.process(job)
             except asyncio.CancelledError:
