@@ -1,0 +1,45 @@
+services:
+  - type: web
+    name: instagram-telegram-bot
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: instagram-bot-redis
+          property: connectionString
+      - key: WEBHOOK_URL
+        sync: false
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: INSTAGRAM_USERNAME
+        sync: false
+      - key: INSTAGRAM_SESSION_B64
+        sync: false
+      - key: RATE_LIMIT_COUNT
+        value: "5"
+      - key: RATE_LIMIT_WINDOW_SECONDS
+        value: "3600"
+      - key: COOLDOWN_SECONDS
+        value: "10"
+      - key: DUPLICATE_TTL_SECONDS
+        value: "3600"
+      - key: MAX_QUEUE_SIZE
+        value: "20"
+      - key: MAX_RETRIES
+        value: "2"
+      - key: RETRY_BACKOFF_SECONDS
+        value: "5"
+      - key: MAX_MEDIA_BYTES
+        value: "524288000"
+      - key: PORT
+        value: "10000"
+
+  - type: keyvalue
+    name: instagram-bot-redis
+    plan: free
+    ipAllowList: []
