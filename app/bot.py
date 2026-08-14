@@ -16,14 +16,10 @@ logger = logging.getLogger(__name__)
 
 
 def build_application(settings: Settings) -> tuple[Application, QueueStore, DownloadWorker]:
-    redis_client = __import__("redis.asyncio", fromlist=["Redis"]).from_url(
-        settings.redis_url,
-        decode_responses=True,
-        health_check_interval=30,
-        socket_connect_timeout=10,
-        socket_timeout=10,
+    queue = QueueStore(
+        settings.upstash_redis_rest_url,
+        settings.upstash_redis_rest_token,
     )
-    queue = QueueStore(redis_client)
     instagram = InstagramClient(
         settings.instagram_username,
         settings.instagram_session_b64,
