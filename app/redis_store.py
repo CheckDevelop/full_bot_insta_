@@ -91,10 +91,57 @@ class Job:
         )
 
 
+class RestRedis:
+    """Small async Upstash REST Redis client. Uses HTTPS, not a long-lived TCP socket."""
+
+    def __init__(self, url: str, token: str) -> None:
+        import aiohttp
+        self.url = url.rstrip("/")
+        self.headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+        self._session: aiohttp.ClientSession | None = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            timeout = aiohttp.ClientTimeout(total=20, connect=10)
+            self._session = aiohttp.ClientSession(headers=self.headers, timeout=timeout)
+        return self._session
+
+    async def execute(self, command: list[Any]) -> Any:
+        session = await self._get_session()
+        try:
+            async with session.post(self.url, json=command) as response:
+                payload = await response.json(content_type=None)
+                if response.status >= 400:
+                    raise RuntimeError(f"Upstash Redis HTTP {response.status}: {payload}")
+                if isinstance(payload, dict) and payload.get("error"):
+                    raise RuntimeError(f"Upstash Redis error: {payload['error']}")
+                return payload.get("result") if isinstance(payload, dict) else payload
+        except Exception:
+            logger.exception("Upstash REST request failed: %s", command[:1])
+            raise
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+
+
+CLAIM_LUA = r"""
+local raw = redis.call('RPOP', KEYS[1])
+if raw then
+    redis.call('LPUSH', KEYS[2], raw)
+    return raw
+end
+return false
+"""
+
+
 class QueueStore:
-    def __init__(self, redis: Redis) -> None:
-        self.redis = redis
-        self._enqueue_script = self.redis.register_script(ENQUEUE_LUA)
+    def __init__(self, redis_url: str, token: str) -> None:
+        self.redis = RestRedis(redis_url, token)
 
     @staticmethod
     def normalize_url(url: str) -> str:
@@ -103,6 +150,10 @@ class QueueStore:
     @staticmethod
     def url_hash(url: str) -> str:
         return hashlib.sha256(url.encode("utf-8")).hexdigest()
+
+    async def ping(self) -> bool:
+        result = await self.redis.execute(["PING"])
+        return result == "PONG"
 
     async def enqueue(
         self,
@@ -122,70 +173,64 @@ class QueueStore:
         duplicate_hash = self.url_hash(normalized)
         job = Job(job_id=job_id, chat_id=chat_id, url=normalized)
 
-        result = await self._enqueue_script(
-            keys=[
-                RATE_KEY_PREFIX + user_key,
-                COOLDOWN_KEY_PREFIX + user_key,
-                DUPLICATE_KEY_PREFIX + duplicate_hash,
-                ACTIVE_KEY,
-                QUEUE_KEY,
-            ],
-            args=[
-                now_ms,
-                rate_limit_window_seconds * 1000,
-                rate_limit_count,
-                cooldown_seconds,
-                duplicate_ttl_seconds,
-                max_queue_size,
-                job.to_json(),
-                job_id,
-            ],
-        )
+        result = await self.redis.execute([
+            "EVAL",
+            ENQUEUE_LUA,
+            "5",
+            RATE_KEY_PREFIX + user_key,
+            COOLDOWN_KEY_PREFIX + user_key,
+            DUPLICATE_KEY_PREFIX + duplicate_hash,
+            ACTIVE_KEY,
+            QUEUE_KEY,
+            str(now_ms),
+            str(rate_limit_window_seconds * 1000),
+            str(rate_limit_count),
+            str(cooldown_seconds),
+            str(duplicate_ttl_seconds),
+            str(max_queue_size),
+            job.to_json(),
+            job_id,
+        ])
 
         status = result[0]
         value = int(result[1] or 0)
         return status, value, job_id
 
     async def claim(self) -> Job | None:
-        raw = await self.redis.brpoplpush(QUEUE_KEY, PROCESSING_KEY, timeout=1)
+        raw = await self.redis.execute(["EVAL", CLAIM_LUA, "2", QUEUE_KEY, PROCESSING_KEY])
         if not raw:
             return None
-        # BRPOPLPUSH pushes to the processing list in the same order.
-        # The return value is the moved value.
         return Job.from_json(raw)
 
     async def acknowledge(self, job: Job, *, success: bool) -> None:
-        await self.redis.lrem(PROCESSING_KEY, 1, job.to_json())
-        await self.redis.srem(ACTIVE_KEY, job.job_id)
-        if success:
-            await self.redis.delete(DUPLICATE_KEY_PREFIX + self.url_hash(self.normalize_url(job.url)))
-        else:
-            await self.redis.delete(DUPLICATE_KEY_PREFIX + self.url_hash(self.normalize_url(job.url)))
+        await self.redis.execute(["LREM", PROCESSING_KEY, "1", job.to_json()])
+        await self.redis.execute(["SREM", ACTIVE_KEY, job.job_id])
+        await self.redis.execute(["DEL", DUPLICATE_KEY_PREFIX + self.url_hash(self.normalize_url(job.url))])
 
     async def requeue(self, job: Job) -> None:
-        await self.redis.lrem(PROCESSING_KEY, 1, job.to_json())
+        await self.redis.execute(["LREM", PROCESSING_KEY, "1", job.to_json()])
         retry_job = Job(
             job_id=job.job_id,
             chat_id=job.chat_id,
             url=job.url,
             attempts=job.attempts + 1,
         )
-        await self.redis.rpush(QUEUE_KEY, retry_job.to_json())
+        await self.redis.execute(["RPUSH", QUEUE_KEY, retry_job.to_json()])
 
     async def recover_processing(self) -> int:
         count = 0
         while True:
-            raw = await self.redis.lpop(PROCESSING_KEY)
+            raw = await self.redis.execute(["LPOP", PROCESSING_KEY])
             if raw is None:
                 break
-            await self.redis.rpush(QUEUE_KEY, raw)
+            await self.redis.execute(["RPUSH", QUEUE_KEY, raw])
             count += 1
         if count:
             logger.warning("Recovered %d unfinished jobs from processing queue", count)
         return count
 
     async def active_count(self) -> int:
-        return int(await self.redis.scard(ACTIVE_KEY))
+        return int(await self.redis.execute(["SCARD", ACTIVE_KEY]))
 
     async def close(self) -> None:
-        await self.redis.aclose()
+        await self.redis.close()
