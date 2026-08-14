@@ -166,12 +166,12 @@ class InstagramClient:
 
     def download(self, url: str) -> list[MediaFile]:
         url = self.validate_url(url)
-        if POST_RE.search(url):
-            return self._download_post(url)
-        if STORY_RE.search(url):
-            return self._download_story(url)
         if HIGHLIGHT_RE.search(url):
             return self._download_highlight(url)
+        if STORY_RE.search(url):
+            return self._download_story(url)    
+        if POST_RE.search(url):
+            return self._download_post(url)
         raise InstagramError("این نوع لینک اینستاگرام در نسخه فعلی پشتیبانی نمی‌شود.")
 
     def _new_job_dir(self) -> Path:
