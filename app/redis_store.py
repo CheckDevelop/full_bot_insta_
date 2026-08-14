@@ -8,8 +8,6 @@ import uuid
 from dataclasses import dataclass, asdict
 from typing import Any
 
-from redis.asyncio import Redis
-
 logger = logging.getLogger(__name__)
 
 QUEUE_KEY = "igbot:queue"
