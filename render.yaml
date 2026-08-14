@@ -7,12 +7,14 @@ services:
     envVars:
       - key: BOT_TOKEN
         sync: false
-      - key: REDIS_URL
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
         sync: false
       - key: WEBHOOK_URL
         sync: false
       - key: WEBHOOK_SECRET
-        sync: false
+        generateValue: true
       - key: INSTAGRAM_USERNAME
         sync: false
       - key: INSTAGRAM_SESSION_B64
