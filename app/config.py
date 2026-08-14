@@ -32,7 +32,8 @@ def env_float(name: str, default: float) -> float:
 @dataclass(frozen=True)
 class Settings:
     bot_token: str
-    redis_url: str
+    upstash_redis_rest_url: str
+    upstash_redis_rest_token: str
     webhook_url: str
     webhook_secret: str
     instagram_username: str
@@ -54,7 +55,8 @@ class Settings:
     def from_env(cls) -> "Settings":
         required = {
             "BOT_TOKEN": os.getenv("BOT_TOKEN"),
-            "REDIS_URL": os.getenv("REDIS_URL"),
+            "UPSTASH_REDIS_REST_URL": os.getenv("UPSTASH_REDIS_REST_URL"),
+            "UPSTASH_REDIS_REST_TOKEN": os.getenv("UPSTASH_REDIS_REST_TOKEN"),
             "WEBHOOK_URL": os.getenv("WEBHOOK_URL"),
             "WEBHOOK_SECRET": os.getenv("WEBHOOK_SECRET"),
             "INSTAGRAM_USERNAME": os.getenv("INSTAGRAM_USERNAME"),
@@ -69,7 +71,8 @@ class Settings:
 
         return cls(
             bot_token=required["BOT_TOKEN"],
-            redis_url=required["REDIS_URL"],
+            upstash_redis_rest_url=required["UPSTASH_REDIS_REST_URL"].rstrip("/"),
+            upstash_redis_rest_token=required["UPSTASH_REDIS_REST_TOKEN"],
             webhook_url=required["WEBHOOK_URL"].rstrip("/"),
             webhook_secret=required["WEBHOOK_SECRET"],
             instagram_username=required["INSTAGRAM_USERNAME"],
