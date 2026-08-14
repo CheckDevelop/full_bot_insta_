@@ -12,7 +12,7 @@ services:
       - key: WEBHOOK_URL
         sync: false
       - key: WEBHOOK_SECRET
-        generateValue: true
+        sync: false
       - key: INSTAGRAM_USERNAME
         sync: false
       - key: INSTAGRAM_SESSION_B64
