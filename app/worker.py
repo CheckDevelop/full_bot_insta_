@@ -195,11 +195,11 @@ class DownloadWorker:
     
         if _is_story_url(job.url):
             # Story rate limit:
-            # فقط یک retry بعد از 60 ثانیه
+            # فقط یک retry بعد از 15 ثانیه
             if retry_after is not None:
-                return max(60, int(retry_after))
+                return max(15, int(retry_after))
     
-            return 60
+            return 15
     
         if retry_after is not None:
             return max(
