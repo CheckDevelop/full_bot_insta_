@@ -138,13 +138,14 @@ REQUEUE_LUA = r"""
 local processing_key = KEYS[1]
 local retry_key = KEYS[2]
 
-local raw_job = ARGV[1]
-local retry_at_ms = tonumber(ARGV[2])
+local old_job = ARGV[1]
+local retry_job = ARGV[2]
+local retry_at_ms = tonumber(ARGV[3])
 
-local removed = redis.call('LREM', processing_key, 1, raw_job)
+local removed = redis.call('LREM', processing_key, 1, old_job)
 
 if removed == 1 then
-    redis.call('ZADD', retry_key, retry_at_ms, raw_job)
+    redis.call('ZADD', retry_key, retry_at_ms, retry_job)
 end
 
 return removed
@@ -479,7 +480,8 @@ class QueueStore:
                 "2",
                 PROCESSING_KEY,
                 RETRY_KEY,
-                retry_job.to_json(),   # ← تغییر این خط
+                job.to_json(),
+                retry_job.to_json(),
                 str(retry_at_ms),
             ]
         )
