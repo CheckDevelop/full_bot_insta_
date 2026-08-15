@@ -1096,9 +1096,33 @@ class InstagramClient:
         if owner_id is None:
             print("یوزر آیدی نداریم")
             url_prof = f"https://www.instagram.com/{username}/"
-
             print(url_prof)
-
+        
+            headers = {
+        
+                "User-Agent":
+                "Mozilla/5.0",
+        
+                "X-IG-App-ID":
+                "936619743392459",
+        
+                "X-CSRFToken":
+                get_cookie_prof("csrftoken"),
+        
+                "Referer":
+                "https://www.instagram.com/",
+        
+                "Accept":
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                }
+            
+            session = L_session.context._session
+            response = session.get(
+                url_prof,
+                headers=headers,
+                timeout=15
+            )     
+            print(response)
         # --------------------------------------------------------
         # Fetch requested story
         # --------------------------------------------------------
