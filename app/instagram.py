@@ -1084,7 +1084,15 @@ class InstagramClient:
         #
         # In that case resolve username -> numeric user ID.
         # --------------------------------------------------------
-    
+        def get_cookie(name):
+
+            for cookie in L_session.context._session.cookies:
+        
+                if cookie.name == name:
+        
+                    return cookie.value
+        
+            return None
         if owner_id is None:
             print("یوزر آیدی نداریم")
             url_prof = f"https://www.instagram.com/{username}/"
@@ -1114,17 +1122,6 @@ class InstagramClient:
                 timeout=15
             )
             print(response)
-            if owner_id is None:
-                raise InstagramError(
-                    f"Instagram user ID برای @{username} "
-                    "از صفحه پروفایل پیدا نشد."
-                )
-
-            logger.info(
-                "Resolved story owner: @%s -> %s",
-                username,
-                owner_id,
-            )
 
         # --------------------------------------------------------
         # Fetch requested story
