@@ -1084,7 +1084,7 @@ class InstagramClient:
         #
         # In that case resolve username -> numeric user ID.
         # --------------------------------------------------------
-        def get_cookie(name):
+        def get_cookie_prof(name):
 
             for cookie in L_session.context._session.cookies:
         
@@ -1096,32 +1096,8 @@ class InstagramClient:
         if owner_id is None:
             print("یوزر آیدی نداریم")
             url_prof = f"https://www.instagram.com/{username}/"
-        
-            headers = {
-        
-                "User-Agent":
-                "Mozilla/5.0",
-        
-                "X-IG-App-ID":
-                "936619743392459",
-        
-                "X-CSRFToken":
-                get_cookie("csrftoken"),
-        
-                "Referer":
-                "https://www.instagram.com/",
-        
-                "Accept":
-                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-        
-            }
-        
-            response = session.get(
-                url_prof,
-                headers=headers,
-                timeout=15
-            )
-            print(response)
+
+            print(url_prof)
 
         # --------------------------------------------------------
         # Fetch requested story
