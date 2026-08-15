@@ -1086,7 +1086,7 @@ class InstagramClient:
         # --------------------------------------------------------
     
         if owner_id is None:
-
+            print("یوزر آیدی نداریم")
             owner_id = self._get_user_id_from_html(
                 username
             )
