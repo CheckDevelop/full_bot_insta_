@@ -1087,10 +1087,33 @@ class InstagramClient:
     
         if owner_id is None:
             print("یوزر آیدی نداریم")
-            owner_id = self._get_user_id_from_html(
-                username
+            url = f"https://www.instagram.com/{username}/"
+        
+            headers = {
+        
+                "User-Agent":
+                "Mozilla/5.0",
+        
+                "X-IG-App-ID":
+                "936619743392459",
+        
+                "X-CSRFToken":
+                get_cookie("csrftoken"),
+        
+                "Referer":
+                "https://www.instagram.com/",
+        
+                "Accept":
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        
+            }
+        
+            response = session.get(
+                url,
+                headers=headers,
+                timeout=15
             )
-
+            print(response)
             if owner_id is None:
                 raise InstagramError(
                     f"Instagram user ID برای @{username} "
