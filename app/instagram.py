@@ -922,6 +922,18 @@ class InstagramClient:
             )
 
         owner_id = int(owner_id_raw)
+        if owner_id is None:
+            try:
+                profile = instaloader.Profile.from_username(
+                self.loader.context,
+                username,
+                )
+            return int(profile.userid)
+
+        except Exception as exc:
+            raise InstagramError(
+                f"نتوانستم Instagram user ID مربوط به @{username} را پیدا کنم."
+            ) from exc    
 
         item = self._find_story_item(
             username,
