@@ -1040,71 +1040,61 @@ class InstagramClient:
         url: str,
     ) -> list[MediaFile]:
     
-        match = STORY_RE.search(url)
-    
-        if not match:
-            raise InstagramError(
-                "URL استوری معتبر نیست."
-            )
-    
-        username = match.group(1)
-        print(username)
-    
-        media_id = int(
-            match.group(2)
+        # استخراج اطلاعات از لینک استوری
+        username_match = re.search(
+            r"/stories/([^/]+)/",
+            url
         )
-        print(media_id)
-    
-        # --------------------------------------------------------
-        # Try to get owner ID from the URL
-        # --------------------------------------------------------
-    
-        parsed = urlparse(url)
-    
-        owner_id = None
-    
-        for key, value in parse_qsl(
-            parsed.query,
-            keep_blank_values=True,
-        ):
-    
-            if (
-                key == "reel_owner_id"
-                and value.isdigit()
-            ):
-                owner_id = int(value)
-                break
-    
-        # --------------------------------------------------------
-        # Normal shared story URLs often do not contain
-        # reel_owner_id.
-        #
-        # Example:
-        #
-        # https://www.instagram.com/stories/tuu.quefas/
-        # 3963547789678100625?utm_source=...
-        #
-        # In that case resolve username -> numeric user ID.
-        # --------------------------------------------------------
-    
-        if owner_id is None:
 
-            owner_id = self._get_user_id_from_html(
+        story_id_match = re.search(
+            r"/stories/[^/]+/(\d+)",
+            url
+        )
+
+        owner_id_match = re.search(
+            r"reel_owner_id=(\d+)",
+            url
+        )
+
+
+        if not username_match or not story_id_match:
+
+            print("Invalid story URL")
+            return
+
+        
+        username = username_match.group(1)
+        print("Story user:", username)
+        story_id = story_id_match.group(1)
+        print("Story Id:", story_id)
+
+
+        headers = {
+
+            "User-Agent":
+            "Mozilla/5.0",
+
+            "X-IG-App-ID":
+            "936619743392459",
+
+            "X-CSRFToken":
+            get_cookie("csrftoken"),
+
+            "Referer":
+            "https://www.instagram.com/"
+
+        }
+        if owner_id_match:
+            owner_id = owner_id_match.group(1)
+        else:
+            session = L_session.context._session
+
+            owner_id = get_user_id_from_html(
+                session,
                 username
             )
-            print(owner_id)
-
-            if owner_id is None:
-                raise InstagramError(
-                    f"Instagram user ID برای @{username} "
-                    "از صفحه پروفایل پیدا نشد."
-                )
-
-            logger.info(
-                "Resolved story owner: @%s -> %s",
-                username,
-                owner_id,
-            )
+            
+        print("Owner ID:", owner_id)
 
         # --------------------------------------------------------
         # Fetch requested story
