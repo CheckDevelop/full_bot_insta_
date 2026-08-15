@@ -453,14 +453,14 @@ class QueueStore:
         *,
         delay_seconds: int,
     ) -> None:
-
+    
         retry_job = Job(
             job_id=job.job_id,
             chat_id=job.chat_id,
             url=job.url,
             attempts=job.attempts + 1,
         )
-
+    
         retry_at_ms = int(
             (
                 time.time()
@@ -471,7 +471,7 @@ class QueueStore:
             )
             * 1000
         )
-
+    
         await self.redis.execute(
             [
                 "EVAL",
@@ -479,15 +479,16 @@ class QueueStore:
                 "2",
                 PROCESSING_KEY,
                 RETRY_KEY,
-                job.to_json(),
+                retry_job.to_json(),   # ← تغییر این خط
                 str(retry_at_ms),
             ]
         )
-
+    
         logger.info(
-            "Job %s scheduled for retry in %ss",
+            "Job %s scheduled for retry in %ss (attempt=%s)",
             job.job_id,
             delay_seconds,
+            retry_job.attempts,
         )
 
     async def recover_processing(self) -> int:
