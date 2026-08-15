@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from pathlib import Path
 
 from telegram import Bot
@@ -17,6 +18,8 @@ from .instagram import (
 from .redis_store import Job, QueueStore
 
 logger = logging.getLogger(__name__)
+
+
 STORY_URL_RE = re.compile(
     r"^https?://(?:www\.)?instagram\.com/stories/[^/]+/[0-9]+",
     re.I,
@@ -28,6 +31,7 @@ STORY_RETRY_MAX_SECONDS = 900
 
 def _is_story_url(url: str) -> bool:
     return bool(STORY_URL_RE.match(url.strip()))
+
 
 async def send_file(
     bot: Bot,
@@ -191,6 +195,35 @@ class DownloadWorker:
         *,
         retry_after: int | None = None,
     ) -> int:
+
+        # Story requests use a separate cooldown because Instagram
+        # rate-limits story endpoints more aggressively. We never retry
+        # a rate-limited story after only a few seconds.
+        if _is_story_url(job.url):
+
+            # attempts=0 -> 60s
+            # attempts=1 -> 120s
+            # attempts=2 -> 240s
+            # attempts=3 -> 480s
+            # attempts>=4 -> capped at 900s
+            delay = STORY_RETRY_BASE_SECONDS * (
+                2 ** max(
+                    0,
+                    job.attempts,
+                )
+            )
+
+            if retry_after is not None:
+                # Always respect Instagram's requested retry time.
+                delay = max(
+                    delay,
+                    int(retry_after),
+                )
+
+            return min(
+                delay,
+                STORY_RETRY_MAX_SECONDS,
+            )
 
         if retry_after is not None:
             # Never hammer Instagram with a smaller delay than it requested.
