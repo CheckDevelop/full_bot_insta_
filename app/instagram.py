@@ -778,7 +778,54 @@ class InstagramClient:
   # ============================================================
     # Stories
     # ============================================================
+    def get_user_id_from_html(session, username):
+
+        url = f"https://www.instagram.com/{username}/"
     
+        headers = {
+    
+            "User-Agent":
+            "Mozilla/5.0",
+    
+            "X-IG-App-ID":
+            "936619743392459",
+    
+            "X-CSRFToken":
+            get_cookie("csrftoken"),
+    
+            "Referer":
+            "https://www.instagram.com/",
+    
+            "Accept":
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    
+        }
+    
+        response = session.get(
+            url,
+            headers=headers,
+            timeout=15
+        )
+    
+        print("Profile status:", response.status_code)
+    
+        html = response.text
+    
+        patterns = [
+            r'"profile_id":"(\d+)"',
+            r'"user_id":"(\d+)"',
+            r'"owner":\{"id":"(\d+)"',
+            r'"id":"(\d+)","username":"' + re.escape(username)
+        ]
+    
+        for pattern in patterns:
+    
+            match = re.search(pattern, html)
+    
+            if match:
+                return match.group(1)
+    
+        return None
     def _find_story_item(
         self,
         username: str,
@@ -796,7 +843,14 @@ class InstagramClient:
         reel_owner_id, _download_story() resolves the owner ID
         from the username first.
         """
-    
+        
+        if not owner_id:
+            session = L_session.context._session
+            owner_id = get_user_id_from_html(
+                session,
+                username
+            )
+            
         api_url = (
             "https://www.instagram.com/api/v1/feed/reels_media/"
             f"?reel_ids={owner_id}"
