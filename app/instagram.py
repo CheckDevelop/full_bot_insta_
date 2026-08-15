@@ -88,93 +88,7 @@ class InstagramClient:
         )
 
         self.loader = self._build_loader()
-    def _get_user_id_from_html(
-        self,
-        username: str,
-    ) -> int | None:
-    
-        session = self.loader.context._session
-    
-        url = f"https://www.instagram.com/{username}/"
-    
-        csrf_token = self._get_cookie("csrftoken")
-    
-        headers = {
-            "User-Agent": session.headers.get(
-                "User-Agent",
-                (
-                    "Mozilla/5.0 (X11; Linux x86_64) "
-                    "AppleWebKit/537.36 "
-                    "Chrome/131 Safari/537.36"
-                ),
-            ),
-            "X-IG-App-ID": "936619743392459",
-            "Referer": "https://www.instagram.com/",
-            "Accept": (
-                "text/html,application/xhtml+xml,"
-                "application/xml;q=0.9,*/*;q=0.8"
-            ),
-        }
-    
-        if csrf_token:
-            headers["X-CSRFToken"] = csrf_token
-    
-        try:
-            response = session.get(
-                url,
-                headers=headers,
-                timeout=15,
-            )
-    
-        except requests.exceptions.Timeout as exc:
-            raise InstagramError(
-                "دریافت صفحه پروفایل timeout شد."
-            ) from exc
-    
-        except requests.exceptions.RequestException as exc:
-            raise InstagramError(
-                f"خطا در دریافت پروفایل @{username}: {exc}"
-            ) from exc
-    
-        print("Profile status:", response.status_code)
-    
-        if response.status_code == 429:
-            raise InstagramRateLimitError(
-                "Instagram هنگام دریافت پروفایل rate limit اعمال کرد."
-            )
-    
-        if response.status_code in {401, 403}:
-            raise InstagramAuthenticationError(
-                f"Instagram صفحه پروفایل را با HTTP "
-                f"{response.status_code} رد کرد."
-            )
-    
-        if response.status_code != 200:
-            raise InstagramError(
-                f"Profile HTTP {response.status_code}: "
-                f"{response.text[:300]}"
-            )
-    
-        html = response.text
-    
-        patterns = [
-            r'"profile_id":"(\d+)"',
-            r'"user_id":"(\d+)"',
-            r'"owner":\{"id":"(\d+)"',
-            r'"id":"(\d+)","username":"' + re.escape(username),
-        ]
-    
-        for pattern in patterns:
-    
-            match = re.search(
-                pattern,
-                html,
-            )
-    
-            if match:
-                return int(match.group(1))
-    
-        return None
+
     # ============================================================
     # Instagram Session
     # ============================================================
@@ -307,26 +221,15 @@ class InstagramClient:
             if not name or value is None:
                 continue
 
-            domain = str(
-                cookie.get("domain")
-                or ".instagram.com"
-            )
-
-            path = str(
-                cookie.get("path")
-                or "/"
-            )
-
-            # Never trust cookie exports to point
-            # at unrelated domains.
-            if "instagram.com" not in domain.lower():
-                domain = ".instagram.com"
-
+            # Keep cookie loading identical to the working standalone
+            # test: normalize every Instagram cookie to the same domain
+            # and path. This avoids duplicate-domain/path CookieJar
+            # conflicts (especially csrftoken/sessionid).
             loader.context._session.cookies.set(
                 str(name),
                 str(value),
-                domain=domain,
-                path=path,
+                domain=".instagram.com",
+                path="/",
             )
 
             loaded += 1
@@ -355,6 +258,115 @@ class InstagramClient:
             "Loaded %d Instagram cookies from JSON session",
             loaded,
         )
+
+    # ============================================================
+    # Resolve username -> user ID from profile HTML
+    # ============================================================
+
+    def _get_user_id_from_html(
+        self,
+        username: str,
+    ) -> int | None:
+
+        session = self.loader.context._session
+        url = f"https://www.instagram.com/{username}/"
+
+        csrf_token = self._get_cookie("csrftoken")
+
+        headers = {
+            "User-Agent": session.headers.get(
+                "User-Agent",
+                (
+                    "Mozilla/5.0 (X11; Linux x86_64) "
+                    "AppleWebKit/537.36 "
+                    "Chrome/131 Safari/537.36"
+                ),
+            ),
+            "X-IG-App-ID": "936619743392459",
+            "Referer": "https://www.instagram.com/",
+            "Accept": (
+                "text/html,application/xhtml+xml,"
+                "application/xml;q=0.9,*/*;q=0.8"
+            ),
+        }
+
+        if csrf_token:
+            headers["X-CSRFToken"] = csrf_token
+
+        try:
+            response = session.get(
+                url,
+                headers=headers,
+                timeout=15,
+            )
+        except requests.exceptions.Timeout as exc:
+            raise InstagramError(
+                "دریافت صفحه پروفایل timeout شد."
+            ) from exc
+        except requests.exceptions.RequestException as exc:
+            raise InstagramError(
+                f"خطا در دریافت پروفایل @{username}: {exc}"
+            ) from exc
+
+        logger.info(
+            "Instagram profile request: status=%s user=@%s",
+            response.status_code,
+            username,
+        )
+
+        if response.status_code == 429:
+            raise InstagramRateLimitError(
+                "Instagram هنگام دریافت پروفایل rate limit اعمال کرد.",
+                retry_after=self._parse_retry_after(response),
+            )
+
+        if response.status_code in {401, 403}:
+            raise InstagramAuthenticationError(
+                f"Instagram صفحه پروفایل را با HTTP "
+                f"{response.status_code} رد کرد."
+            )
+
+        if response.status_code != 200:
+            raise InstagramError(
+                f"Profile HTTP {response.status_code}: "
+                f"{response.text[:300]}"
+            )
+
+        html = response.text
+
+        # The exact serialized key can change, so keep several
+        # conservative patterns.
+        patterns = [
+            r'"profile_id":"(\d+)"',
+            r'"profile_id":(\d+)',
+            r'"user_id":"(\d+)"',
+            r'"user_id":(\d+)',
+            r'"owner":\{"id":"(\d+)"',
+            r'"id":"(\d+)","username":"' + re.escape(username) + r'"',
+            r'"id":(\d+),"username":"' + re.escape(username) + r'"',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, html)
+            if match:
+                return int(match.group(1))
+
+        return None
+
+    @staticmethod
+    def _parse_retry_after(
+        response: requests.Response,
+    ) -> int | None:
+
+        raw = response.headers.get("Retry-After")
+
+        if not raw:
+            return None
+
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
 
     # ============================================================
     # Cookie helper
@@ -861,9 +873,10 @@ class InstagramClient:
 
             raise
 
-    # ============================================================
+  # ============================================================
     # Stories
     # ============================================================
+    
     def _find_story_item(
         self,
         username: str,
@@ -881,7 +894,7 @@ class InstagramClient:
         reel_owner_id, _download_story() resolves the owner ID
         from the username first.
         """
-        
+    
         api_url = (
             "https://www.instagram.com/api/v1/feed/reels_media/"
             f"?reel_ids={owner_id}"
@@ -930,6 +943,13 @@ class InstagramClient:
                 f"خطا در ارتباط با Instagram برای استوری: {exc}"
             ) from exc
     
+        logger.info(
+            "Instagram reels_media request: status=%s owner_id=%s media_id=%s",
+            response.status_code,
+            owner_id,
+            media_id,
+        )
+
         # --------------------------------------------------------
         # HTTP error handling
         # --------------------------------------------------------
@@ -1013,7 +1033,8 @@ class InstagramClient:
                     return item
     
         return None
-      
+    
+    
     def _download_story(
         self,
         url: str,
@@ -1063,69 +1084,25 @@ class InstagramClient:
         #
         # In that case resolve username -> numeric user ID.
         # --------------------------------------------------------
-        
-        if owner_id is None:       
-            try:    
-                owner_id = self._get_user_id_from_html(
-                    username
-                )
-        
-                if owner_id is None:
-                    raise InstagramError(
-                        f"Instagram user ID برای @{username} "
-                        "از صفحه پروفایل پیدا نشد."
-                    )
-        
-                print("Owner ID from HTML:", owner_id)
+    
+        if owner_id is None:
 
-    
-            except instaloader.exceptions.LoginRequiredException as exc:
-    
-                raise InstagramAuthenticationError(
-                    "برای پیدا کردن صاحب استوری، "
-                    "Session اینستاگرام نیاز به احراز هویت دارد."
-                ) from exc
-    
-            except (
-                instaloader.exceptions
-                .QueryReturnedNotFoundException
-            ) as exc:
-    
+            owner_id = self._get_user_id_from_html(
+                username
+            )
+
+            if owner_id is None:
                 raise InstagramError(
-                    f"پروفایل @{username} پیدا نشد."
-                ) from exc
-    
-            except Exception as exc:
-    
-                message = str(exc).lower()
-    
-                if (
-                    "429" in message
-                    or "too many requests" in message
-                    or "rate limit" in message
-                ):
-    
-                    raise InstagramRateLimitError(
-                        "Instagram هنگام پیدا کردن "
-                        "صاحب استوری rate limit اعمال کرد."
-                    ) from exc
-    
-                if (
-                    "401" in message
-                    or "403" in message
-                    or "unauthorized" in message
-                ):
-    
-                    raise InstagramAuthenticationError(
-                        "Session اینستاگرام برای پیدا کردن "
-                        "صاحب استوری معتبر نیست."
-                    ) from exc
-    
-                raise InstagramError(
-                    f"نتوانستم Instagram user ID مربوط به "
-                    f"@{username} را پیدا کنم: {exc}"
-                ) from exc
-    
+                    f"Instagram user ID برای @{username} "
+                    "از صفحه پروفایل پیدا نشد."
+                )
+
+            logger.info(
+                "Resolved story owner: @%s -> %s",
+                username,
+                owner_id,
+            )
+
         # --------------------------------------------------------
         # Fetch requested story
         # --------------------------------------------------------
