@@ -822,6 +822,7 @@ class InstagramClient:
                 "429" in message
                 or "too many requests"
                 in message
+                or "rate limit" in message
             ):
 
                 raise InstagramRateLimitError(
