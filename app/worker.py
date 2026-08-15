@@ -349,19 +349,39 @@ class DownloadWorker:
             )
 
         except InstagramRateLimitError as exc:
-
+        
+            # فقط 2 تلاش مجاز:
+            # تلاش اول fail شد -> یک retry
+            # تلاش دوم fail شد -> stop
+        
+            if job.attempts >= 1:
+                logger.warning(
+                    "Instagram rate limit exhausted for job %s",
+                    job.job_id,
+                )
+        
+                await self.queue.acknowledge(job)
+        
+                await self.bot.send_message(
+                    job.chat_id,
+                    "❌ Instagram بعد از 2 تلاش هنوز محدودیت اعمال کرده. "
+                    "دانلود متوقف شد.",
+                )
+        
+                return
+        
             delay = self._retry_delay(
                 job,
                 retry_after=exc.retry_after,
             )
-
+        
             logger.warning(
                 "Instagram rate limit "
                 "for job %s. retry in %ss",
                 job.job_id,
                 delay,
             )
-
+        
             await self._retry_job(
                 job,
                 "Instagram موقتاً درخواست‌ها "
