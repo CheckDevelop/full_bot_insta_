@@ -1087,7 +1087,7 @@ class InstagramClient:
     
         if owner_id is None:
             print("یوزر آیدی نداریم")
-            url = f"https://www.instagram.com/{username}/"
+            url_prof = f"https://www.instagram.com/{username}/"
         
             headers = {
         
@@ -1109,7 +1109,7 @@ class InstagramClient:
             }
         
             response = session.get(
-                url,
+                url_prof,
                 headers=headers,
                 timeout=15
             )
