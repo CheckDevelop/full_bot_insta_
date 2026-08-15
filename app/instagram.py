@@ -1048,10 +1048,12 @@ class InstagramClient:
             )
     
         username = match.group(1)
+        print(username)
     
         media_id = int(
             match.group(2)
         )
+        print(media_id)
     
         # --------------------------------------------------------
         # Try to get owner ID from the URL
