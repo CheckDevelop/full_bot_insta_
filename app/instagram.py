@@ -1092,6 +1092,7 @@ class InstagramClient:
             owner_id = self._get_user_id_from_html(
                 username
             )
+            print(owner_id)
 
             if owner_id is None:
                 raise InstagramError(
