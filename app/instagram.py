@@ -794,19 +794,7 @@ class InstagramClient:
         For a story URL that already contains reel_owner_id, one direct
         request is enough to locate the requested item.
         """
-        parsed = urlparse(url)
-        owner_id_raw = None
 
-        for key, value in parse_qsl(
-            parsed.query,
-            keep_blank_values=True,
-        ):
-        if key == "reel_owner_id":
-            owner_id_raw = value
-            break
-
-        if owner_id_raw and owner_id_raw.isdigit():
-            owner_id = int(owner_id_raw)
         api_url = (
             "https://www.instagram.com/api/v1/feed/reels_media/"
             f"?reel_ids={owner_id}"
