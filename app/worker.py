@@ -17,7 +17,17 @@ from .instagram import (
 from .redis_store import Job, QueueStore
 
 logger = logging.getLogger(__name__)
+STORY_URL_RE = re.compile(
+    r"^https?://(?:www\.)?instagram\.com/stories/[^/]+/[0-9]+",
+    re.I,
+)
 
+STORY_RETRY_BASE_SECONDS = 60
+STORY_RETRY_MAX_SECONDS = 900
+
+
+def _is_story_url(url: str) -> bool:
+    return bool(STORY_URL_RE.match(url.strip()))
 
 async def send_file(
     bot: Bot,
