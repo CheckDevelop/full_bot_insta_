@@ -263,96 +263,6 @@ class InstagramClient:
     # Resolve username -> user ID from profile HTML
     # ============================================================
 
-    def _get_user_id_from_html(
-        self,
-        username: str,
-    ) -> int | None:
-
-        session = self.loader.context._session
-        url = f"https://www.instagram.com/{username}/"
-
-        csrf_token = self._get_cookie("csrftoken")
-
-        headers = {
-            "User-Agent": session.headers.get(
-                "User-Agent",
-                (
-                    "Mozilla/5.0 (X11; Linux x86_64) "
-                    "AppleWebKit/537.36 "
-                    "Chrome/131 Safari/537.36"
-                ),
-            ),
-            "X-IG-App-ID": "936619743392459",
-            "Referer": "https://www.instagram.com/",
-            "Accept": (
-                "text/html,application/xhtml+xml,"
-                "application/xml;q=0.9,*/*;q=0.8"
-            ),
-        }
-
-        if csrf_token:
-            headers["X-CSRFToken"] = csrf_token
-
-        try:
-            response = session.get(
-                url,
-                headers=headers,
-                timeout=15,
-            )
-        except requests.exceptions.Timeout as exc:
-            raise InstagramError(
-                "دریافت صفحه پروفایل timeout شد."
-            ) from exc
-        except requests.exceptions.RequestException as exc:
-            raise InstagramError(
-                f"خطا در دریافت پروفایل @{username}: {exc}"
-            ) from exc
-
-        logger.info(
-            "Instagram profile request: status=%s user=@%s",
-            response.status_code,
-            username,
-        )
-
-        if response.status_code == 429:
-            raise InstagramRateLimitError(
-                "Instagram هنگام دریافت پروفایل rate limit اعمال کرد.",
-                retry_after=self._parse_retry_after(response),
-            )
-
-        if response.status_code in {401, 403}:
-            raise InstagramAuthenticationError(
-                f"Instagram صفحه پروفایل را با HTTP "
-                f"{response.status_code} رد کرد."
-            )
-
-        if response.status_code != 200:
-            raise InstagramError(
-                f"Profile HTTP {response.status_code}: "
-                f"{response.text[:300]}"
-            )
-
-        html = response.text
-
-        # The exact serialized key can change, so keep several
-        # conservative patterns.
-        patterns = [
-            r'"profile_id":"(\d+)"',
-            r'"profile_id":(\d+)',
-            r'"user_id":"(\d+)"',
-            r'"user_id":(\d+)',
-            r'"owner":\{"id":"(\d+)"',
-            r'"id":"(\d+)","username":"' + re.escape(username) + r'"',
-            r'"id":(\d+),"username":"' + re.escape(username) + r'"',
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, html)
-            if match:
-                return int(match.group(1))
-
-        return None
-
     @staticmethod
     def _parse_retry_after(
         response: requests.Response,
@@ -1116,7 +1026,7 @@ class InstagramClient:
                 "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
                 }
             
-            session = L_session.context._session
+            session = session = self.loader.context._session
             response = session.get(
                 url_prof,
                 headers=headers,
