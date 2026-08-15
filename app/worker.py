@@ -192,27 +192,16 @@ class DownloadWorker:
         *,
         retry_after: int | None = None,
     ) -> int:
-
+    
         if _is_story_url(job.url):
-            # Story requests use a dedicated cooldown so a 429 is not
-            # followed by another story request after the generic 5s delay.
-            story_delay = 60 * (
-                2 ** max(0, job.attempts)
-            )
-
+            # Story rate limit:
+            # فقط یک retry بعد از 60 ثانیه
             if retry_after is not None:
-                story_delay = max(
-                    story_delay,
-                    int(retry_after),
-                )
-
-            return min(
-                story_delay,
-                900,
-            )
-
+                return max(60, int(retry_after))
+    
+            return 60
+    
         if retry_after is not None:
-            # Never hammer Instagram with a smaller delay than it requested.
             return max(
                 5,
                 min(
@@ -220,22 +209,19 @@ class DownloadWorker:
                     1800,
                 ),
             )
-
+    
         base = max(
             1,
             self.settings.retry_backoff_seconds,
         )
-
-        # attempts=0 -> base
-        # attempts=1 -> 2*base
-        # attempts=2 -> 4*base
+    
         delay = base * (
             2 ** max(
                 0,
                 job.attempts,
             )
         )
-
+    
         return min(
             delay,
             300,
