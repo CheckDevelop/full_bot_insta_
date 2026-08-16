@@ -1048,6 +1048,10 @@ class InstagramClient:
             return None
 
         html = response.text
+        print("Received:", len(html))
+
+        index = html.find('data-content-len="70836"')
+        print("Found at:", index)
         #print(html)
 
         if not html:
