@@ -93,6 +93,10 @@ class InstagramClient:
 
         self.loader = self._build_loader()
 
+        # Optional requests.Session used ONLY for Story owner-ID lookup.
+        # Normal media downloads keep using self.loader.context._session.
+        self._story_owner_proxy_session: requests.Session | None = None
+
     # ============================================================
     # Instagram Session
     # ============================================================
@@ -814,156 +818,163 @@ class InstagramClient:
     # Instagram Story
     # ============================================================
     
+    def set_story_owner_proxy_session(
+        self,
+        proxy_session: requests.Session,
+    ) -> None:
+        """Use proxy_session ONLY for Story owner-ID lookups."""
+        self.clear_story_owner_proxy_session()
+        self._story_owner_proxy_session = proxy_session
+
+    def clear_story_owner_proxy_session(self) -> None:
+        """Disable/close the Story owner-ID proxy session."""
+        session = self._story_owner_proxy_session
+        self._story_owner_proxy_session = None
+        if session is not None:
+            try:
+                session.close()
+            except Exception:
+                logger.exception(
+                    "Failed to close Story owner proxy session"
+                )
+
+    def get_user_id_from_html_with_proxy(
+        self,
+        proxy_session: requests.Session,
+        username: str,
+    ) -> str | None:
+        """Get a profile User ID through the dedicated owner-ID proxy only."""
+
+        url = f"https://www.instagram.com/{username.strip()}/"
+
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "X-IG-App-ID": "936619743392459",
+            "X-CSRFToken": self._get_cookie("csrftoken"),
+            "Referer": "https://www.instagram.com/",
+            "Accept": (
+                "text/html,application/xhtml+xml,application/xml;"
+                "q=0.9,*/*;q=0.8"
+            ),
+        }
+
+        try:
+            response = proxy_session.get(
+                url,
+                headers=headers,
+                timeout=20,
+            )
+        except requests.RequestException as exc:
+            raise InstagramError(
+                f"خطا در تست User ID با V2Ray: {exc}"
+            ) from exc
+
+        if response.status_code != 200:
+            raise InstagramError(
+                f"Instagram در تست User ID کد {response.status_code} برگرداند."
+            )
+
+        html = response.text
+        patterns = [
+            r'"profile_id":"(\d+)"',
+            r'"user_id":"(\d+)"',
+            r'"owner":\{"id":"(\d+)"',
+            r'"id":"(\d+)","username":"' + re.escape(username.strip()),
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, html)
+            if match:
+                return match.group(1)
+
+        return None
+
     def _get_story_owner_id_from_html(
         self,
-        session,
+        session: requests.Session,
         story_url: str,
         media_id: int,
     ) -> int | None:
-    
+
         headers = {
             "User-Agent": "Mozilla/5.0",
-    
-            "X-IG-App-ID":
-                "936619743392459",
-    
-            "X-CSRFToken":
-                self._get_cookie("csrftoken"),
-    
-            "Referer":
-                "https://www.instagram.com/",
-    
-            "Accept":
+            "X-IG-App-ID": "936619743392459",
+            "X-CSRFToken": self._get_cookie("csrftoken"),
+            "Referer": "https://www.instagram.com/",
+            "Accept": (
                 "text/html,application/xhtml+xml,"
-                "application/xml;q=0.9,*/*;q=0.8",
+                "application/xml;q=0.9,*/*;q=0.8"
+            ),
         }
-    
-        print(
-            "Getting Story HTML..."
-        )
-    
-        print(
-            "Story URL:",
-            story_url
-        )
-    
+
+        print("Getting Story HTML through owner-ID proxy...")
+        print("Story URL:", story_url)
+
         try:
-    
             response = session.get(
                 story_url,
                 headers=headers,
-                timeout=15,
+                timeout=20,
             )
-    
         except requests.RequestException as exc:
-    
             print(
-                "Story HTML request failed:",
+                "Story HTML proxy request failed:",
                 repr(exc),
             )
-    
             return None
-    
+
         print(
-            "Story HTML status:",
+            "Story HTML proxy status:",
             response.status_code,
         )
-    
+
         if response.status_code != 200:
-    
-            print(
-                "Story HTML request failed:",
-                response.status_code,
-            )
-    
             return None
-    
+
         html = response.text
-    
+
         if not html:
-    
-            print(
-                "Story HTML is empty."
-            )
-    
             return None
-    
-        print(
-            "Story HTML size:",
-            len(html)
-        )
-    
-        # ========================================================
-        # 1. Best match:
-        #
-        # "id":"3964120283462967868_14886042089"
-        # ========================================================
-    
+
         patterns = [
-    
             rf'"id":"{media_id}_(\d+)"',
-    
-            # Optional escaped/alternate form
             rf'"id"\s*:\s*"{media_id}_(\d+)"',
-    
-            # Story item with user pk
             rf'"pk":"{media_id}".*?"user":\{{.*?"pk":"(\d+)"',
-    
-            # Story item with user id
             rf'"pk":"{media_id}".*?"user":\{{.*?"id":"(\d+)"',
         ]
-    
-        for index, pattern in enumerate(
-            patterns,
-            start=1,
-        ):
-    
+
+        for index, pattern in enumerate(patterns, start=1):
             try:
-    
                 match = re.search(
                     pattern,
                     html,
                     re.DOTALL,
                 )
-    
             except re.error as exc:
-    
-                print(
-                    "Regex error:",
-                    repr(exc),
+                logger.warning(
+                    "Story owner regex error: %s",
+                    exc,
                 )
-    
                 continue
-    
-            if match:
-    
-                owner_id = match.group(1)
-    
-                print(
-                    f"Owner ID found in Story HTML "
-                    f"(pattern {index}):",
-                    owner_id,
-                )
-    
-                try:
-    
-                    return int(
-                        owner_id
-                    )
-    
-                except (
-                    TypeError,
-                    ValueError,
-                ):
-    
-                    return None
-    
-        print(
-            "Owner ID was not found in Story HTML."
-        )
-    
+
+            if not match:
+                continue
+
+            try:
+                owner_id = int(match.group(1))
+            except (TypeError, ValueError):
+                continue
+
+            print(
+                f"Owner ID found in proxied Story HTML "
+                f"(pattern {index}):",
+                owner_id,
+            )
+            return owner_id
+
+        print("Owner ID was not found in proxied Story HTML.")
         return None
-    
+
     # ============================================================
     # Find Story Item
     # ============================================================
@@ -1185,31 +1196,38 @@ class InstagramClient:
         # --------------------------------------------------------
     
         if owner_id is None:
-        
+
             print(
                 "Owner ID not found in URL."
             )
-        
-            session = (
-                self.loader.context._session
+
+            proxy_session = (
+                self._story_owner_proxy_session
             )
-        
+
+            if proxy_session is None:
+
+                raise InstagramError(
+                    "برای استوری بدون reel_owner_id، "
+                    "V2Ray مخصوص گرفتن Owner ID فعال نیست."
+                )
+
             owner_id = (
                 self._get_story_owner_id_from_html(
-                    session,
+                    proxy_session,
                     url,
                     media_id,
                 )
             )
-        
+
             if owner_id is None:
-        
+
                 raise InstagramError(
-                    "Owner ID این Story از HTML خود Story پیدا نشد."
+                    "Owner ID این Story از HTML از طریق V2Ray پیدا نشد."
                 )
-        
+
             print(
-                "Owner ID from Story HTML:",
+                "Owner ID from proxied Story HTML:",
                 owner_id,
             )
     
