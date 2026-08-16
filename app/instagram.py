@@ -1048,15 +1048,10 @@ class InstagramClient:
             return None
 
         html = response.text
-        for keyword in [
-            "owner",
-            "owner_id",
-            "user_id",
-            "profile_id",
-            "jesspopko",
-            "3964846536981408112"
-        ]:
-            print(keyword, html.find(keyword))
+        user_ids = re.findall(r'"user_id"\s*:\s*"(\d+)"', html)
+        
+        print(len(user_ids))
+        print(user_ids)
 
         if not html:
 
