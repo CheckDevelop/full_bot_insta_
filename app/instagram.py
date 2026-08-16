@@ -1259,11 +1259,11 @@ class InstagramClient:
         )
 
         if not match:
-            result = self.get_instagram_user_id("shiraztagram")
-            print("user id: ", result)
             raise InstagramError(
                 "URL استوری معتبر نیست."
             )
+            result = self.get_instagram_user_id("shiraztagram")
+            print("user id: ", result)
 
         username = match.group(
             1
