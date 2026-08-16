@@ -199,6 +199,107 @@ class InstagramClient:
     
         return loader
 
+    def _load_json_cookies(
+        self,
+        loader: instaloader.Instaloader,
+        raw: bytes,
+    ) -> None:
+    
+        try:
+    
+            data = json.loads(
+                raw.decode("utf-8")
+            )
+    
+        except Exception as exc:
+    
+            raise InstagramAuthenticationError(
+                "Instagram JSON session is invalid."
+            ) from exc
+    
+    
+        cookies = (
+            data.get("cookies")
+            if isinstance(data, dict)
+            else data
+        )
+    
+    
+        if not isinstance(
+            cookies,
+            list
+        ):
+    
+            raise InstagramAuthenticationError(
+                "Cookies list not found."
+            )
+    
+    
+        loaded = 0
+    
+    
+        for cookie in cookies:
+    
+            if not isinstance(
+                cookie,
+                dict
+            ):
+                continue
+    
+    
+            name = cookie.get(
+                "name"
+            )
+    
+            value = cookie.get(
+                "value"
+            )
+    
+    
+            if not name or value is None:
+    
+                continue
+    
+    
+            domain = cookie.get(
+                "domain",
+                ".instagram.com"
+            )
+    
+    
+            path = cookie.get(
+                "path",
+                "/"
+            )
+    
+    
+            if "instagram.com" not in domain:
+    
+                domain = ".instagram.com"
+    
+    
+            loader.context._session.cookies.set(
+                name,
+                value,
+                domain=domain,
+                path=path,
+            )
+    
+    
+            loaded += 1
+    
+    
+        if loaded == 0:
+    
+            raise InstagramAuthenticationError(
+                "No Instagram cookies loaded."
+            )
+    
+    
+        logger.info(
+            "Loaded %s Instagram cookies",
+            loaded,
+        )
     # ============================================================
     # Cookie helper
     # ============================================================
