@@ -1053,7 +1053,7 @@ class InstagramClient:
             return None
 
         html = response.text
-        print(html)
+        print(response)
 
         if not html:
 
