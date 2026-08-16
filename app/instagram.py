@@ -1032,6 +1032,10 @@ class InstagramClient:
                 headers=headers,
                 timeout=15,
             )
+            print(response.status_code)
+            print(response.headers.get("content-length"))
+            print(len(response.text))
+            print(response.text[:500])
         
         except requests.RequestException as exc:
             print("Story HTML request failed:", repr(exc))
