@@ -1053,6 +1053,7 @@ class InstagramClient:
             return None
 
         html = response.text
+        print(html)
 
         if not html:
 
@@ -1262,9 +1263,7 @@ class InstagramClient:
             raise InstagramError(
                 "URL استوری معتبر نیست."
             )
-            result = self.get_instagram_user_id("shiraztagram")
-            print("user id: ", result)
-
+            
         username = match.group(
             1
         )
