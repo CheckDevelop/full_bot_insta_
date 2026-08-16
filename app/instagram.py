@@ -97,187 +97,107 @@ class InstagramClient:
     # Instagram Session
     # ============================================================
 
-    def _build_loader(self) -> instaloader.Instaloader:
+    def _build_loader(
+        self,
+    ) -> instaloader.Instaloader:
+    
         loader = instaloader.Instaloader(
             save_metadata=False,
             download_comments=False,
-            user_agent=(
-                "Mozilla/5.0 (X11; Linux x86_64) "
-                "AppleWebKit/537.36 "
-                "Chrome/131 Safari/537.36"
-            ),
+            user_agent="Mozilla/5.0",
             max_connection_attempts=1,
             request_timeout=self.request_timeout_seconds,
         )
-
+    
         try:
+    
             raw = base64.b64decode(
                 self.session_b64,
                 validate=True,
             )
+    
         except Exception as exc:
+    
             raise InstagramAuthenticationError(
                 "INSTAGRAM_SESSION_B64 is not valid base64."
             ) from exc
-
+    
         if not raw:
+    
             raise InstagramAuthenticationError(
                 "Instagram session is empty."
             )
-
-        self.session_path.write_bytes(raw)
-
+    
+        self.session_path.write_bytes(
+            raw
+        )
+    
         try:
+    
             stripped = raw.lstrip()
-
-            # JSON cookies from the user's existing instagram.json
-            if stripped.startswith(b"{") or stripped.startswith(b"["):
+    
+            # ----------------------------------------------------
+            # JSON cookies
+            # ----------------------------------------------------
+    
+            if (
+                stripped.startswith(b"{")
+                or stripped.startswith(b"[")
+            ):
+    
                 self._load_json_cookies(
                     loader,
                     raw,
                 )
-            print(
-                "SESSION COOKIES:",
-                loader.context._session.cookies.get_dict()
-            )
-            
-            print(
-                "SESSION HEADERS:",
-                loader.context._session.headers
-            )
-
-            # Native Instaloader session file
+    
+            # ----------------------------------------------------
+            # Native Instaloader session
+            # ----------------------------------------------------
+    
             else:
+    
                 loader.load_session_from_file(
                     self.username,
                     str(self.session_path),
                 )
-
+    
         except InstagramAuthenticationError:
+    
             raise
-
+    
         except Exception as exc:
+    
             raise InstagramAuthenticationError(
                 f"Instagram session could not be loaded: {exc}"
             ) from exc
-
-        # IMPORTANT:
-        # Do not call loader.test_login() here.
-        #
-        # Instagram may temporarily return 401/429 during startup.
-        # That must not crash the whole Telegram bot.
+    
+        # --------------------------------------------------------
+        # IMPORTANT
+        # Use exactly the same headers as the CMD test
+        # --------------------------------------------------------
+    
+        loader.context._session.headers.update(
+            {
+                "User-Agent": "Mozilla/5.0",
+    
+                "X-IG-App-ID":
+                    "936619743392459",
+    
+                "Referer":
+                    "https://www.instagram.com/",
+    
+                "Accept":
+                    "*/*",
+            }
+        )
+    
         logger.info(
             "Instagram session loaded for @%s; "
             "startup login validation skipped",
             self.username,
         )
-
+    
         return loader
-
-    def _load_json_cookies(
-        self,
-        loader: instaloader.Instaloader,
-        raw: bytes,
-    ) -> None:
-
-        try:
-            data = json.loads(
-                raw.decode("utf-8")
-            )
-
-        except (
-            UnicodeDecodeError,
-            json.JSONDecodeError,
-        ) as exc:
-            raise InstagramAuthenticationError(
-                "INSTAGRAM_SESSION_B64 contains JSON, "
-                "but the JSON is invalid."
-            ) from exc
-
-        cookies = (
-            data.get("cookies")
-            if isinstance(data, dict)
-            else data
-        )
-
-        if isinstance(cookies, dict):
-
-            cookie_items = [
-                {
-                    "name": name,
-                    "value": value,
-                }
-                for name, value in cookies.items()
-            ]
-
-        elif isinstance(cookies, list):
-
-            cookie_items = cookies
-
-        else:
-
-            raise InstagramAuthenticationError(
-                "Instagram JSON session must contain "
-                "a 'cookies' list or cookie mapping."
-            )
-
-        loaded = 0
-
-        for cookie in cookie_items:
-
-            if not isinstance(cookie, dict):
-                continue
-
-            name = cookie.get("name")
-            value = cookie.get("value")
-
-            if not name or value is None:
-                continue
-
-            domain = str(
-                cookie.get("domain")
-                or ".instagram.com"
-            )
-
-            path = str(
-                cookie.get("path")
-                or "/"
-            )
-
-            # Never trust cookie exports to point
-            # at unrelated domains.
-            if "instagram.com" not in domain.lower():
-                domain = ".instagram.com"
-
-            loader.context._session.cookies.set(
-                str(name),
-                str(value),
-                domain=domain,
-                path=path,
-            )
-
-            loaded += 1
-
-        if loaded == 0:
-
-            raise InstagramAuthenticationError(
-                "No Instagram cookies were found "
-                "in INSTAGRAM_SESSION_B64."
-            )
-
-        loader.context._session.headers.update(
-            {
-                "User-Agent": "Mozilla/5.0",
-                "X-IG-App-ID": "936619743392459",
-                "Referer": "https://www.instagram.com/",
-                "Accept": "*/*",
-            }
-        )
-
-        logger.info(
-            "Loaded %d Instagram cookies from JSON session",
-            loaded,
-        )
 
     # ============================================================
     # Cookie helper
