@@ -524,6 +524,7 @@ class V2RayManager:
             )
 
         session = requests.Session()
+        session.trust_env = False
 
         proxy = (
             f"socks5h://127.0.0.1:{port}"
@@ -537,6 +538,13 @@ class V2RayManager:
         )
 
         return session
+
+    def create_proxy_session(
+        self,
+        user_id: int,
+    ) -> requests.Session:
+        """Create a SOCKS5 requests session for owner-ID lookup only."""
+        return self.get_requests_session(user_id)
 
     # =========================================================
     # Test Instagram
