@@ -1027,26 +1027,29 @@ class InstagramClient:
         )
 
         try:
-
             response = session.get(
                 story_url,
                 headers=headers,
-                timeout=60,
+                timeout=15,
+                stream=True
             )
-
+        
         except requests.RequestException as exc:
-
-            print(
-                "Story HTML request failed:",
-                repr(exc),
-            )
-
+            print("Story HTML request failed:", repr(exc))
             return None
-
-        print(
-            "Story HTML status:",
-            response.status_code,
-        )
+        
+        
+        print("Story HTML status:", response.status_code)
+        
+        if response.status_code != 200:
+            return None
+        
+        
+        with open("line42.txt", "w", encoding="utf-8") as f:
+            for line_number, line in enumerate(response.iter_lines(decode_unicode=True), 1):
+                if line_number == 42:
+                    f.write(line)
+                    break
 
         if response.status_code != 200:
 
