@@ -787,38 +787,38 @@ class InstagramClient:
     # Resolve username -> user ID from profile HTML
     # ============================================================
 
-    def get_user_id_from_html(session, username):
+    def _get_user_id_from_html(
+        self,
+        session,
+        username
+    ):
         def get_cookie(name):
-        
-            for cookie in self.loader.context._session.cookies:
-        
+            for cookie in session.cookies:
                 if cookie.name == name:
-        
                     return cookie.value
-        
+    
             return None
     
         url = f"https://www.instagram.com/{username}/"
     
         headers = {
+            "User-Agent": session.headers.get(
+                "User-Agent",
+                "Mozilla/5.0"
+            ),
     
-            "User-Agent":
-            "Mozilla/5.0",
+            "X-IG-App-ID": "936619743392459",
     
-            "X-IG-App-ID":
-            "936619743392459",
+            "X-CSRFToken": get_cookie("csrftoken"),
     
-            "X-CSRFToken":
-            get_cookie("csrftoken"),
-    
-            "Referer":
-            "https://www.instagram.com/",
+            "Referer": "https://www.instagram.com/",
     
             "Accept":
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-    
+                "text/html,application/xhtml+xml,"
+                "application/xml;q=0.9,*/*;q=0.8"
         }
-        print("header: ", headers)
+    
+        print("header:", headers)
     
         response = session.get(
             url,
@@ -826,7 +826,10 @@ class InstagramClient:
             timeout=15
         )
     
-        print("Profile status:", response.status_code)
+        print(
+            "Profile status:",
+            response.status_code
+        )
     
         html = response.text
     
@@ -834,15 +837,29 @@ class InstagramClient:
             r'"profile_id":"(\d+)"',
             r'"user_id":"(\d+)"',
             r'"owner":\{"id":"(\d+)"',
-            r'"id":"(\d+)","username":"' + re.escape(username)
+            r'"id":"(\d+)","username":"' +
+            re.escape(username)
         ]
     
         for pattern in patterns:
     
-            match = re.search(pattern, html)
+            match = re.search(
+                pattern,
+                html
+            )
     
             if match:
-                return match.group(1)
+                user_id = match.group(1)
+    
+                print(
+                    f"Found user ID for @{username}: {user_id}"
+                )
+    
+                return user_id
+    
+        print(
+            f"User ID for @{username} not found"
+        )
     
         return None
 
@@ -865,8 +882,13 @@ class InstagramClient:
 
 
         session = self.loader.context._session
-        a = get_user_id_from_html(session, username) 
-        print(a)
+        
+        a = self._get_user_id_from_html(
+            session,
+            username
+        )
+
+print("HTML user ID:", a)
 
         csrf_token = self._get_cookie(
             "csrftoken"
