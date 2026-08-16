@@ -1122,8 +1122,7 @@ class InstagramClient:
         session = (
             self.loader.context._session
         )
-        result = self.get_instagram_user_id("shiraztagram")
-        print("user id: ", result)
+
         csrf_token = self._get_cookie(
             "csrftoken"
         )
@@ -1260,7 +1259,8 @@ class InstagramClient:
         )
 
         if not match:
-
+            result = self.get_instagram_user_id("shiraztagram")
+            print("user id: ", result)
             raise InstagramError(
                 "URL استوری معتبر نیست."
             )
