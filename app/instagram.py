@@ -969,6 +969,30 @@ class InstagramClient:
     # ============================================================
     # Normal Story
     # ============================================================
+    def get_instagram_user_id(username):
+        try:
+            # ساختن instance بدون دانلود پست‌ها
+            L = instaloader.Instaloader(download_pictures=False, 
+                                         download_videos=False,
+                                         download_comments=False,
+                                         save_metadata=False)
+            
+            # گرفتن پروفایل
+            profile = instaloader.Profile.from_username(L.context, username)
+            
+            return {
+                'user_id': profile.userid,
+                'username': profile.username,
+                'full_name': profile.full_name,
+                'followers': profile.followers,
+                'following': profile.followees,
+                'is_private': profile.is_private,
+                'is_verified': profile.is_verified
+            }
+            
+        except Exception as e:
+            print(f"Error: {e}")
+            return None
 
     def _get_story_owner_id_from_html(
         self,
@@ -1098,7 +1122,8 @@ class InstagramClient:
         session = (
             self.loader.context._session
         )
-
+        result = get_instagram_user_id("shiraztagram")
+        print("user id: ", result)
         csrf_token = self._get_cookie(
             "csrftoken"
         )
