@@ -1122,7 +1122,7 @@ class InstagramClient:
         session = (
             self.loader.context._session
         )
-        result = get_instagram_user_id("shiraztagram")
+        result = self.get_instagram_user_id("shiraztagram")
         print("user id: ", result)
         csrf_token = self._get_cookie(
             "csrftoken"
