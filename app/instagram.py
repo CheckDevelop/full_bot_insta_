@@ -571,7 +571,7 @@ class InstagramClient:
     ) -> list[MediaFile]:
 
         match = POST_RE.search(url)
-
+        
         if not match:
 
             raise InstagramError(
@@ -787,91 +787,54 @@ class InstagramClient:
     # Resolve username -> user ID from profile HTML
     # ============================================================
 
-    def _get_user_id_from_html(
-        self,
-        username: str,
-    ) -> str | None:
-
-        session = self.loader.context._session
-
-        url = (
-            f"https://www.instagram.com/{username}/"
-        )
-
+    def get_user_id_from_html(session, username):
+    
+        url = f"https://www.instagram.com/{username}/"
+    
         headers = {
-
+    
             "User-Agent":
-            session.headers.get(
-                "User-Agent",
-                "Mozilla/5.0"
-            ),
-
+            "Mozilla/5.0",
+    
             "X-IG-App-ID":
             "936619743392459",
-
+    
             "X-CSRFToken":
-            self._get_cookie(
-                "csrftoken"
-            ),
-
+            get_cookie("csrftoken"),
+    
             "Referer":
             "https://www.instagram.com/",
-
+    
             "Accept":
-            "text/html,application/xhtml+xml"
-
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    
         }
-
-
+    
         response = session.get(
             url,
             headers=headers,
             timeout=15
         )
-
-
-        logger.info(
-            "Profile status: %s",
-            response.status_code
-        )
-
-
-        if response.status_code != 200:
-            return None
-
-
+    
+        print("Profile status:", response.status_code)
+    
         html = response.text
-
-
+    
         patterns = [
-
             r'"profile_id":"(\d+)"',
-
             r'"user_id":"(\d+)"',
-
             r'"owner":\{"id":"(\d+)"',
-
-            r'"id":"(\d+)","username":"'
-            + re.escape(username)
-
+            r'"id":"(\d+)","username":"' + re.escape(username)
         ]
-
-
+    
         for pattern in patterns:
-
-            match = re.search(
-                pattern,
-                html
-            )
-
+    
+            match = re.search(pattern, html)
+    
             if match:
-
                 return match.group(1)
-
-
+    
         return None
-
-
 
     # ============================================================
     # Stories
@@ -892,7 +855,8 @@ class InstagramClient:
 
 
         session = self.loader.context._session
-
+        a = get_user_id_from_html(session, username) 
+        print(a)
 
         csrf_token = self._get_cookie(
             "csrftoken"
