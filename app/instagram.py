@@ -39,6 +39,10 @@ HIGHLIGHT_RE = re.compile(
     r"/stories/highlights/([0-9]+)",
     re.I,
 )
+HIGHLIGHT_RE2 = re.compile(
+    r"/s/([^?]+)",
+    re.I,
+)
 
 
 class InstagramError(RuntimeError):
@@ -1405,21 +1409,75 @@ class InstagramClient:
     # ============================================================
     # Highlights
     # ============================================================
+    def get_highlight_id_from_url(url):
+
+        """
+        Example:
+    
+        https://www.instagram.com/s/aGlnaGxpZ2h0OjE3OTU2MDUyMzg0NjQ3NTY0?story_media_id=3845518169410282443_14886042089
+    
+        Base64:
+            aGlnaGxpZ2h0OjE3OTU2MDUyMzg0NjQ3NTY0
+    
+        Decoded:
+            highlight:17956052384647564
+        """
+    
+        match = re.search(
+            r"/s/([^?]+)",
+            url
+        )
+    
+        if not match:
+    
+            return None
+    
+        encoded = match.group(1)
+    
+        try:
+    
+            # اگر padding حذف شده باشد
+            encoded += "=" * (-len(encoded) % 4)
+    
+            decoded = base64.b64decode(
+                encoded
+            ).decode(
+                "utf-8"
+            )
+    
+            if decoded.startswith("highlight:"):
+    
+                return decoded
+    
+        except Exception as e:
+    
+            print(
+                "Highlight decode error:",
+                e
+            )
+    
+        return None
 
     def _download_highlight(
         self,
         url: str,
     ) -> list[MediaFile]:
 
-        match = HIGHLIGHT_RE.search(url)
-
-        if not match:
-
+        match1 = HIGHLIGHT_RE.search(url)
+        match2 = HIGHLIGHT_RE2.search(url)
+        if match1:
+            highlight_id = match1.group(1)
+        elif match2:
+            highlight_id = get_highlight_id_from_url(
+                url
+            )
+        else:
             raise InstagramError(
                 "URL هایلایت معتبر نیست."
             )
+        print(highlight_id)
 
-        highlight_id = match.group(1)
+        
 
         session = (
             self.loader.context._session
