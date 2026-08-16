@@ -1052,8 +1052,9 @@ class InstagramClient:
 
             return None
 
+        data = response.json()
+        print(json.dumps(data, indent=2)[:3000])
         html = response.text
-        print(response)
 
         if not html:
 
