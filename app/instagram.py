@@ -994,111 +994,456 @@ class InstagramClient:
             print(f"Error: {e}")
             return None
 
-    def _get_story_owner_id_from_html(
+   def _get_story_owner_id_from_html(
         self,
         session,
         story_url: str,
         media_id: int,
     ) -> int | None:
-
+    
         headers = {
-
-            "User-Agent":
-                "Mozilla/5.0",
-
-            "X-IG-App-ID":
-                "936619743392459",
-
-            "X-CSRFToken":
-                self._get_cookie(
-                    "csrftoken"
-                ),
-
-            "Referer":
-                "https://www.instagram.com/",
-
-            "Accept":
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/139.0.0.0 Safari/537.36"
+            ),
+    
+            "X-IG-App-ID": "936619743392459",
+    
+            "X-CSRFToken": self._get_cookie("csrftoken"),
+    
+            "Referer": "https://www.instagram.com/",
+    
+            "Accept": (
                 "text/html,application/xhtml+xml,"
-                "application/xml;q=0.9,*/*;q=0.8",
+                "application/xml;q=0.9,"
+                "image/avif,image/webp,"
+                "*/*;q=0.8"
+            ),
+    
+            "Accept-Language": "en-US,en;q=0.9",
+    
+            "Accept-Encoding": "gzip, deflate, br",
+    
+            "Connection": "keep-alive",
         }
-
-        print(
-            "Getting Story HTML..."
-        )
-
+    
+        print("Getting Story HTML...")
+    
         try:
             response = session.get(
                 story_url,
                 headers=headers,
                 timeout=15,
+                allow_redirects=True,
             )
-            print(response.status_code)
-            print(response.headers.get("content-length"))
-            print(len(response.text))
-            print(response.text[:500])
-        
+    
         except requests.RequestException as exc:
-            print("Story HTML request failed:", repr(exc))
+            print(
+                "Story HTML request failed:",
+                repr(exc),
+            )
             return None
-        
-        
-        print("Story HTML status:", response.status_code)
-        
+    
+        print(
+            "Story HTML status:",
+            response.status_code,
+        )
+    
+        print(
+            "Final URL:",
+            response.url,
+        )
+    
+        print(
+            "Content-Length:",
+            response.headers.get("content-length"),
+        )
+    
+        html = response.text
+    
+        print(
+            "HTML length:",
+            len(html),
+        )
+    
         if response.status_code != 200:
             return None
-
-        html = response.text
-        user_ids = re.findall(r'"user_id"\s*:\s*"(\d+)"', html)
-        
-        print(len(user_ids))
-        print(user_ids)
-
+    
         if not html:
-
+            print("Story HTML is empty.")
             return None
-
-        patterns = [
-
-            rf'"id":"{media_id}_(\d+)"',
-
-            rf'"id"\s*:\s*"{media_id}_(\d+)"',
-
-            rf'"pk":"{media_id}".*?'
-            rf'"user":\{{.*?"pk":"(\d+)"',
-
-            rf'"pk":"{media_id}".*?'
-            rf'"user":\{{.*?"id":"(\d+)"',
+    
+        media_id_str = str(media_id)
+    
+        # ---------------------------------------------------------
+        # 1. Check whether media_id actually exists in HTML
+        # ---------------------------------------------------------
+    
+        media_index = html.find(media_id_str)
+    
+        print(
+            "Media ID:",
+            media_id_str,
+        )
+    
+        print(
+            "Media ID position:",
+            media_index,
+        )
+    
+        if media_index == -1:
+            print(
+                "Media ID was NOT found in Story HTML."
+            )
+    
+            return None
+    
+        # ---------------------------------------------------------
+        # 2. Print the area around the media ID
+        # ---------------------------------------------------------
+    
+        context_before = 5000
+        context_after = 10000
+    
+        start = max(
+            0,
+            media_index - context_before,
+        )
+    
+        end = min(
+            len(html),
+            media_index + context_after,
+        )
+    
+        media_block = html[start:end]
+    
+        print(
+            "========== MEDIA CONTEXT START =========="
+        )
+    
+        print(media_block)
+    
+        print(
+            "=========== MEDIA CONTEXT END ==========="
+        )
+    
+        # ---------------------------------------------------------
+        # 3. Find ALL user_id values in entire HTML
+        # ---------------------------------------------------------
+    
+        user_id_patterns = [
+            # "user_id":"123"
+            r'"user_id"\s*:\s*"(\d+)"',
+    
+            # "user_id":123
+            r'"user_id"\s*:\s*(\d+)',
+    
+            # 'user_id':'123'
+            r"'user_id'\s*:\s*'(\d+)'",
+    
+            # 'user_id':123
+            r"'user_id'\s*:\s*(\d+)",
         ]
-
-        for pattern in patterns:
-
+    
+        all_user_ids = []
+    
+        for pattern in user_id_patterns:
+            matches = re.findall(
+                pattern,
+                html,
+                flags=re.IGNORECASE,
+            )
+    
+            all_user_ids.extend(matches)
+    
+        # Remove duplicates while preserving order
+        all_user_ids = list(
+            dict.fromkeys(all_user_ids)
+        )
+    
+        print(
+            "ALL user_id values:",
+            len(all_user_ids),
+        )
+    
+        print(
+            all_user_ids,
+        )
+    
+        # ---------------------------------------------------------
+        # 4. Find IDs around the media ID
+        # ---------------------------------------------------------
+    
+        nearby_id_patterns = [
+            # "user_id":"123"
+            r'"user_id"\s*:\s*"(\d+)"',
+    
+            # "user_id":123
+            r'"user_id"\s*:\s*(\d+)',
+    
+            # "pk":"123"
+            r'"pk"\s*:\s*"(\d+)"',
+    
+            # "pk":123
+            r'"pk"\s*:\s*(\d+)',
+    
+            # "id":"123"
+            r'"id"\s*:\s*"(\d+)"',
+    
+            # "id":123
+            r'"id"\s*:\s*(\d+)',
+        ]
+    
+        nearby_ids = []
+    
+        for pattern in nearby_id_patterns:
+    
+            matches = re.findall(
+                pattern,
+                media_block,
+                flags=re.IGNORECASE,
+            )
+    
+            nearby_ids.extend(matches)
+    
+        nearby_ids = list(
+            dict.fromkeys(nearby_ids)
+        )
+    
+        print(
+            "IDs near media:",
+            len(nearby_ids),
+        )
+    
+        print(
+            nearby_ids,
+        )
+    
+        # ---------------------------------------------------------
+        # 5. Try explicit owner structures
+        # ---------------------------------------------------------
+    
+        owner_patterns = [
+    
+            # "owner":{"id":"123"}
+            r'"owner"\s*:\s*\{'
+            r'.{0,3000}?'
+            r'"id"\s*:\s*"(\d+)"',
+    
+            # "owner":{"pk":"123"}
+            r'"owner"\s*:\s*\{'
+            r'.{0,3000}?'
+            r'"pk"\s*:\s*"(\d+)"',
+    
+            # "user":{"id":"123"}
+            r'"user"\s*:\s*\{'
+            r'.{0,3000}?'
+            r'"id"\s*:\s*"(\d+)"',
+    
+            # "user":{"pk":"123"}
+            r'"user"\s*:\s*\{'
+            r'.{0,3000}?'
+            r'"pk"\s*:\s*"(\d+)"',
+    
+            # "owner":{"id":123}
+            r'"owner"\s*:\s*\{'
+            r'.{0,3000}?'
+            r'"id"\s*:\s*(\d+)',
+    
+            # "user":{"id":123}
+            r'"user"\s*:\s*\{'
+            r'.{0,3000}?'
+            r'"id"\s*:\s*(\d+)',
+        ]
+    
+        for pattern in owner_patterns:
+    
             try:
-
+                match = re.search(
+                    pattern,
+                    media_block,
+                    flags=re.DOTALL | re.IGNORECASE,
+                )
+    
+            except re.error as exc:
+                print(
+                    "Regex error:",
+                    repr(exc),
+                )
+                continue
+    
+            if not match:
+                continue
+    
+            try:
+                owner_id = int(
+                    match.group(1)
+                )
+    
+            except (
+                TypeError,
+                ValueError,
+            ):
+                continue
+    
+            print(
+                "Owner ID found from explicit owner/user:",
+                owner_id,
+            )
+    
+            return owner_id
+    
+        # ---------------------------------------------------------
+        # 6. Try media_id -> user_id relationship
+        # ---------------------------------------------------------
+    
+        media_to_user_patterns = [
+    
+            # media_id ... user_id
+            rf'"{re.escape(media_id_str)}".{{0,5000}}?'
+            rf'"user_id"\s*:\s*"(\d+)"',
+    
+            # media_id ... user_id without quotes
+            rf'"{re.escape(media_id_str)}".{{0,5000}}?'
+            rf'"user_id"\s*:\s*(\d+)',
+    
+            # user_id ... media_id
+            rf'"user_id"\s*:\s*"(\d+)".{{0,5000}}?'
+            rf'"{re.escape(media_id_str)}"',
+    
+            # user_id without quotes ... media_id
+            rf'"user_id"\s*:\s*(\d+).{{0,5000}}?'
+            rf'"{re.escape(media_id_str)}"',
+        ]
+    
+        for pattern in media_to_user_patterns:
+    
+            try:
                 match = re.search(
                     pattern,
                     html,
-                    re.DOTALL,
+                    flags=re.DOTALL | re.IGNORECASE,
                 )
-
-            except re.error:
-
+    
+            except re.error as exc:
+                print(
+                    "Regex error:",
+                    repr(exc),
+                )
                 continue
-
-            if match:
-
-                try:
-
-                    return int(
-                        match.group(1)
-                    )
-
-                except (
-                    TypeError,
-                    ValueError,
-                ):
-
-                    return None
-
+    
+            if not match:
+                continue
+    
+            try:
+                owner_id = int(
+                    match.group(1)
+                )
+    
+            except (
+                TypeError,
+                ValueError,
+            ):
+                continue
+    
+            print(
+                "Owner ID found from media/user relationship:",
+                owner_id,
+            )
+    
+            return owner_id
+    
+        # ---------------------------------------------------------
+        # 7. Try old Instagram media ID format
+        # ---------------------------------------------------------
+    
+        old_patterns = [
+    
+            rf'"id"\s*:\s*'
+            rf'"{re.escape(media_id_str)}_(\d+)"',
+    
+            rf'"id"\s*:\s*'
+            rf"'{re.escape(media_id_str)}_(\d+)'",
+    
+            rf'"pk"\s*:\s*'
+            rf'"{re.escape(media_id_str)}"'
+            rf'.{{0,5000}}?'
+            rf'"user"\s*:\s*\{{'
+            rf'.{{0,3000}}?'
+            rf'"pk"\s*:\s*"(\d+)"',
+    
+            rf'"pk"\s*:\s*'
+            rf'"{re.escape(media_id_str)}"'
+            rf'.{{0,5000}}?'
+            rf'"user"\s*:\s*\{{'
+            rf'.{{0,3000}}?'
+            rf'"id"\s*:\s*"(\d+)"',
+        ]
+    
+        for pattern in old_patterns:
+    
+            try:
+                match = re.search(
+                    pattern,
+                    html,
+                    flags=re.DOTALL | re.IGNORECASE,
+                )
+    
+            except re.error as exc:
+                print(
+                    "Regex error:",
+                    repr(exc),
+                )
+                continue
+    
+            if not match:
+                continue
+    
+            try:
+                owner_id = int(
+                    match.group(1)
+                )
+    
+            except (
+                TypeError,
+                ValueError,
+            ):
+                continue
+    
+            print(
+                "Owner ID found from old media format:",
+                owner_id,
+            )
+    
+            return owner_id
+    
+        # ---------------------------------------------------------
+        # 8. Debug: save HTML for inspection
+        # ---------------------------------------------------------
+    
+        try:
+            with open(
+                "story_debug.html",
+                "w",
+                encoding="utf-8",
+            ) as f:
+                f.write(html)
+    
+            print(
+                "Saved HTML to story_debug.html"
+            )
+    
+        except OSError as exc:
+            print(
+                "Could not save debug HTML:",
+                repr(exc),
+            )
+    
+        print(
+            "Owner ID could not be extracted from Story HTML."
+        )
+    
         return None
 
     # ============================================================
