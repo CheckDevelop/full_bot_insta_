@@ -27,8 +27,12 @@ POST_RE = re.compile(
 )
 
 STORY_RE = re.compile(
-    r"/stories/([^/]+)/([0-9]+)",
-    re.I,
+    r"https?://(?:www\.)?instagram\.com/"
+    r"stories/"
+    r"([^/?]+)/"
+    r"(\d+)"
+    r"(?:/|\?|$)",
+    re.IGNORECASE
 )
 
 HIGHLIGHT_RE = re.compile(
