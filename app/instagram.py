@@ -1031,7 +1031,7 @@ class InstagramClient:
             response = session.get(
                 story_url,
                 headers=headers,
-                timeout=15,
+                timeout=60,
             )
 
         except requests.RequestException as exc:
