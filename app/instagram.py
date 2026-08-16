@@ -1031,7 +1031,6 @@ class InstagramClient:
                 story_url,
                 headers=headers,
                 timeout=15,
-                stream=True
             )
         
         except requests.RequestException as exc:
@@ -1043,18 +1042,6 @@ class InstagramClient:
         
         if response.status_code != 200:
             return None
-        
-        
-        with open("line42.txt", "w", encoding="utf-8") as f:
-            for line_number, line in enumerate(response.iter_lines(decode_unicode=True), 1):
-                if line_number == 42:
-                    f.write(line)
-                    break
-
-        if response.status_code != 200:
-
-            return None
-
 
         html = response.text
         print(html)
