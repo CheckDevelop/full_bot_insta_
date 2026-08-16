@@ -1055,7 +1055,6 @@ class InstagramClient:
 
         html = response.text
         matches = re.findall(r'"USER_ID"\s*:\s*"([^"]*)"', html)
-
         for i, user_id in enumerate(matches, 1):
             print(i, user_id)
 
