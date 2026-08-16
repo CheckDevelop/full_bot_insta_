@@ -790,8 +790,12 @@ class InstagramClient:
     def _get_user_id_from_html(
         self,
         session,
-        username
+        username: str
     ):
+        """
+        دریافت Instagram User ID از HTML صفحه پروفایل
+        """
+    
         def get_cookie(name):
             for cookie in session.cookies:
                 if cookie.name == name:
@@ -801,6 +805,8 @@ class InstagramClient:
     
         url = f"https://www.instagram.com/{username}/"
     
+        csrf_token = get_cookie("csrftoken")
+    
         headers = {
             "User-Agent": session.headers.get(
                 "User-Agent",
@@ -809,8 +815,6 @@ class InstagramClient:
     
             "X-IG-App-ID": "936619743392459",
     
-            "X-CSRFToken": get_cookie("csrftoken"),
-    
             "Referer": "https://www.instagram.com/",
     
             "Accept":
@@ -818,7 +822,12 @@ class InstagramClient:
                 "application/xml;q=0.9,*/*;q=0.8"
         }
     
-        print("header:", headers)
+        if csrf_token:
+            headers["X-CSRFToken"] = csrf_token
+    
+        print(
+            f"Getting profile HTML: @{username}"
+        )
     
         response = session.get(
             url,
@@ -831,12 +840,17 @@ class InstagramClient:
             response.status_code
         )
     
+        response.raise_for_status()
+    
         html = response.text
     
         patterns = [
             r'"profile_id":"(\d+)"',
+    
             r'"user_id":"(\d+)"',
+    
             r'"owner":\{"id":"(\d+)"',
+    
             r'"id":"(\d+)","username":"' +
             re.escape(username)
         ]
@@ -849,78 +863,78 @@ class InstagramClient:
             )
     
             if match:
+    
                 user_id = match.group(1)
     
                 print(
-                    f"Found user ID for @{username}: {user_id}"
+                    f"Found User ID: {user_id}"
                 )
     
                 return user_id
     
         print(
-            f"User ID for @{username} not found"
+            f"User ID not found for @{username}"
         )
     
         return None
-
+    
+    
     # ============================================================
     # Stories
     # ============================================================
-
+    
     def _find_story_item(
         self,
         username: str,
         media_id: int,
         owner_id: int,
     ) -> dict | None:
-
-
+    
         api_url = (
             "https://www.instagram.com/api/v1/feed/reels_media/"
             f"?reel_ids={owner_id}"
         )
-
-
+    
         session = self.loader.context._session
-        
-        a = self._get_user_id_from_html(
-            session,
-            username
-        )
-
-print("HTML user ID:", a)
-
+    
         csrf_token = self._get_cookie(
             "csrftoken"
         )
-
-
+    
         headers = {
-
-            "User-Agent":
-            session.headers.get(
+            "User-Agent": session.headers.get(
                 "User-Agent",
                 "Mozilla/5.0"
             ),
-
+    
             "X-IG-App-ID":
-            "936619743392459",
-
+                "936619743392459",
+    
             "Referer":
-            "https://www.instagram.com/",
-
+                "https://www.instagram.com/",
+    
             "Accept":
-            "*/*"
-
+                "*/*"
         }
-
-
+    
         if csrf_token:
-
+    
             headers["X-CSRFToken"] = csrf_token
-
-
-
+    
+        print(
+            "Getting story metadata..."
+        )
+    
+        print(
+            "Owner ID:",
+            owner_id
+        )
+    
+        print(
+            "Media ID:",
+            media_id
+        )
+    
         response = session.get(
             api_url,
             headers=headers,
@@ -929,204 +943,311 @@ print("HTML user ID:", a)
                 self.request_timeout_seconds
             )
         )
-
-
+    
+        print(
+            "Story API status:",
+            response.status_code
+        )
+    
         self._raise_for_instagram_response(
             response,
             "getting story metadata"
         )
-
-
+    
         data = response.json()
-
-
+    
         reels = data.get(
             "reels",
             {}
         )
-
-
+    
         for reel in reels.values():
-
+    
             for item in reel.get(
                 "items",
                 []
             ):
-
+    
                 item_id = str(
                     item.get("pk")
                 )
-
+    
                 if item_id == str(media_id):
-
+    
+                    print(
+                        "Story item found:",
+                        item_id
+                    )
+    
                     return item
-
-
+    
+        print(
+            "Story item not found"
+        )
+    
         return None
-
-
-
+    
+    
+    # ============================================================
+    # Download Story
+    # ============================================================
+    
     def _download_story(
         self,
         url: str,
     ) -> list[MediaFile]:
-
-
+    
         match = STORY_RE.search(
             url
         )
-
-
+    
         if not match:
-
+    
             raise InstagramError(
                 "URL استوری معتبر نیست."
             )
-
-
+    
         username = match.group(1)
-
-
+    
         media_id = int(
             match.group(2)
         )
-
-
+    
+        print(
+            "Story username:",
+            username
+        )
+    
+        print(
+            "Story media ID:",
+            media_id
+        )
+    
         parsed = urlparse(
             url
         )
-
-
+    
         owner_id = None
-
-
+    
+        # --------------------------------------------------------
+        # تلاش برای پیدا کردن reel_owner_id از URL
+        # --------------------------------------------------------
+    
         for key, value in parse_qsl(
             parsed.query
         ):
-
+    
             if (
                 key == "reel_owner_id"
                 and value.isdigit()
             ):
-
-                owner_id = int(value)
+    
+                owner_id = int(
+                    value
+                )
+    
+                print(
+                    "Owner ID found in URL:",
+                    owner_id
+                )
+    
                 break
-
-
-
-        # اگر لینک owner_id نداشت
+    
+        # --------------------------------------------------------
+        # اگر owner_id داخل URL نبود
+        # User ID را از صفحه پروفایل بگیر
+        # --------------------------------------------------------
+    
         if owner_id is None:
-
-
+    
+            print(
+                "Owner ID not found in URL."
+            )
+    
+            print(
+                f"Getting User ID from profile: @{username}"
+            )
+    
+            session = self.loader.context._session
+    
             owner_id = self._get_user_id_from_html(
+                session,
                 username
             )
-
-
+    
             if owner_id is None:
-
+    
                 raise InstagramError(
                     "User ID استوری پیدا نشد."
                 )
-
-
-            owner_id = int(owner_id)
-
-
-
+    
+            owner_id = int(
+                owner_id
+            )
+    
+            print(
+                "Owner ID from profile:",
+                owner_id
+            )
+    
+        # --------------------------------------------------------
+        # پیدا کردن Story
+        # --------------------------------------------------------
+    
         item = self._find_story_item(
             username,
             media_id,
             owner_id
         )
-
-
+    
         if item is None:
-
+    
             raise InstagramError(
                 "استوری پیدا نشد یا منقضی شده."
             )
-
-
+    
+        # --------------------------------------------------------
+        # ایجاد پوشه دانلود
+        # --------------------------------------------------------
+    
         job_dir = self._new_job_dir()
-
-
-
+    
         try:
-
-
+    
             media_type = item.get(
                 "media_type"
             )
-
-
+    
+            # ====================================================
+            # VIDEO
+            # ====================================================
+    
             if media_type == 2:
-
-
-                media_url = (
-                    item["video_versions"][0]["url"]
+    
+                video_versions = item.get(
+                    "video_versions",
+                    []
                 )
-
-
+    
+                if not video_versions:
+    
+                    raise InstagramError(
+                        "لینک ویدئوی استوری پیدا نشد."
+                    )
+    
+                media_url = video_versions[0].get(
+                    "url"
+                )
+    
+                if not media_url:
+    
+                    raise InstagramError(
+                        "CDN URL ویدئو پیدا نشد."
+                    )
+    
                 path = (
                     job_dir /
                     f"{username}_story_{media_id}.mp4"
                 )
-
-
+    
                 file_type = "video"
-
-
-
-            elif media_type == 1:
-
-
-                media_url = (
-                    item["image_versions2"]
-                    ["candidates"][0]["url"]
+    
+                print(
+                    "Story CDN URL:"
                 )
-
-
+    
+                print(
+                    media_url
+                )
+    
+            # ====================================================
+            # PHOTO
+            # ====================================================
+    
+            elif media_type == 1:
+    
+                image_versions = item.get(
+                    "image_versions2",
+                    {}
+                )
+    
+                candidates = image_versions.get(
+                    "candidates",
+                    []
+                )
+    
+                if not candidates:
+    
+                    raise InstagramError(
+                        "لینک تصویر استوری پیدا نشد."
+                    )
+    
+                media_url = candidates[0].get(
+                    "url"
+                )
+    
+                if not media_url:
+    
+                    raise InstagramError(
+                        "CDN URL تصویر پیدا نشد."
+                    )
+    
                 path = (
                     job_dir /
                     f"{username}_story_{media_id}.jpg"
                 )
-
-
+    
                 file_type = "photo"
-
-
-
-            else:
-
-                raise InstagramError(
-                    "نوع استوری پشتیبانی نمی‌شود."
+    
+                print(
+                    "Story CDN URL:"
                 )
-
-
-
+    
+                print(
+                    media_url
+                )
+    
+            # ====================================================
+            # UNKNOWN
+            # ====================================================
+    
+            else:
+    
+                raise InstagramError(
+                    f"نوع استوری پشتیبانی نمی‌شود: {media_type}"
+                )
+    
+            # ----------------------------------------------------
+            # دانلود فایل
+            # ----------------------------------------------------
+    
             self._download_url(
                 media_url,
                 path
             )
-
-
+    
+            print(
+                "Story downloaded:"
+            )
+    
+            print(
+                path
+            )
+    
             return [
                 MediaFile(
                     path,
                     file_type
                 )
             ]
-
-
-
+    
         except Exception:
-
+    
             shutil.rmtree(
                 job_dir,
                 ignore_errors=True
             )
-
+    
             raise
     # ============================================================
     # Highlights
