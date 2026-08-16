@@ -3,5 +3,3 @@ aiohttp>=3.9,<4
 instaloader==4.15.3
 requests>=2.32,<3
 python-dotenv>=1.0,<2
-PySocks>=1.7,<2
-
