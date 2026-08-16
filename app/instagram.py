@@ -786,275 +786,166 @@ class InstagramClient:
     
     def _get_story_owner_id(
         self,
-        username: str,
+        username: str
     ) -> int | None:
         """
-        Get Story owner/user ID using the existing Instagram session.
-    
-        Story-specific helper.
-        Does not modify post/reel/highlight download logic.
+        Resolve Instagram user ID for Story.
+        Only used for Story downloader.
         """
     
         session = self.loader.context._session
     
-        # --------------------------------------------------------
-        # 1. Instagram web_profile_info API
-        # --------------------------------------------------------
     
-        api_url = (
-            "https://www.instagram.com/api/v1/users/"
-            "web_profile_info/"
-            f"?username={username}"
-        )
-    
-        csrf_token = self._get_cookie(
-            "csrftoken"
-        )
-    
-        headers = {
-            "User-Agent": session.headers.get(
-                "User-Agent",
-                "Mozilla/5.0"
-            ),
-    
-            "X-IG-App-ID":
-                "936619743392459",
-    
-            "X-Requested-With":
-                "XMLHttpRequest",
-    
-            "Referer":
-                f"https://www.instagram.com/{username}/",
-    
-            "Accept":
-                "*/*",
-        }
-    
-        if csrf_token:
-            headers["X-CSRFToken"] = csrf_token
-    
-        print(
-            f"Getting Story owner ID for @{username}..."
-        )
+        # =====================================================
+        # Method 1 - Instaloader
+        # =====================================================
     
         try:
     
-            response = session.get(
-                api_url,
-                headers=headers,
-                timeout=15
+            print(
+                f"Trying Instaloader profile for @{username}"
             )
     
-        except requests.RequestException as exc:
+            profile = instaloader.Profile.from_username(
+                self.loader.context,
+                username
+            )
+    
+            user_id = int(
+                profile.userid
+            )
     
             print(
-                "Story owner API request failed:",
-                repr(exc)
+                "Owner ID from Instaloader:",
+                user_id
             )
     
-            response = None
+            return user_id
     
-        # --------------------------------------------------------
-        # Parse API response
-        # --------------------------------------------------------
     
-        if response is not None:
+        except Exception as e:
     
             print(
-                "Story owner API status:",
-                response.status_code
+                "Instaloader failed:",
+                e
             )
     
-            if response.status_code == 200:
     
-                try:
-    
-                    data = response.json()
-    
-                    user = (
-                        data
-                        .get("data", {})
-                        .get("user", {})
-                    )
-    
-                    user_id = user.get(
-                        "id"
-                    )
-    
-                    if user_id is None:
-    
-                        user_id = user.get(
-                            "pk"
-                        )
-    
-                    if user_id is not None:
-    
-                        try:
-    
-                            owner_id = int(
-                                user_id
-                            )
-    
-                            print(
-                                "Story owner ID:",
-                                owner_id
-                            )
-    
-                            return owner_id
-    
-                        except (
-                            TypeError,
-                            ValueError
-                        ):
-    
-                            pass
-    
-                except (
-                    ValueError,
-                    TypeError,
-                    AttributeError
-                ) as exc:
-    
-                    print(
-                        "Could not parse "
-                        "Story owner API response:",
-                        repr(exc)
-                    )
-    
-            elif response.status_code == 429:
-    
-                print(
-                    "Story owner API returned HTTP 429."
-                )
-    
-            else:
-    
-                print(
-                    "Story owner API failed:",
-                    response.status_code
-                )
-    
-        # --------------------------------------------------------
-        # 2. Fallback: profile HTML
-        # --------------------------------------------------------
-    
-        print(
-            f"Trying profile HTML fallback for @{username}..."
-        )
-    
-        profile_url = (
-            f"https://www.instagram.com/{username}/"
-        )
+        # =====================================================
+        # Method 2 - Instagram web_profile_info
+        # =====================================================
     
         try:
     
-            response = session.get(
-                profile_url,
-                headers={
-                    "User-Agent": session.headers.get(
+            print(
+                "Trying web_profile_info..."
+            )
+    
+    
+            url = (
+                "https://www.instagram.com/api/v1/users/"
+                "web_profile_info/"
+                f"?username={username}"
+            )
+    
+    
+            headers = {
+    
+                "User-Agent":
+                    session.headers.get(
                         "User-Agent",
                         "Mozilla/5.0"
                     ),
     
-                    "X-IG-App-ID":
-                        "936619743392459",
+                "X-IG-App-ID":
+                    "936619743392459",
     
-                    "Referer":
-                        "https://www.instagram.com/",
+                "X-Requested-With":
+                    "XMLHttpRequest",
     
-                    "Accept":
-                        "text/html,application/xhtml+xml,"
-                        "application/xml;q=0.9,*/*;q=0.8",
-                },
+                "Referer":
+                    f"https://www.instagram.com/{username}/",
     
+                "Accept":
+                    "*/*"
+    
+            }
+    
+    
+            csrf = self._get_cookie(
+                "csrftoken"
+            )
+    
+    
+            if csrf:
+    
+                headers[
+                    "X-CSRFToken"
+                ] = csrf
+    
+    
+    
+            response = session.get(
+                url,
+                headers=headers,
                 timeout=15
             )
     
-        except requests.RequestException as exc:
     
             print(
-                "Profile HTML request failed:",
-                repr(exc)
+                "web_profile_info status:",
+                response.status_code
             )
     
-            return None
     
-        print(
-            "Profile status:",
-            response.status_code
-        )
+            if response.status_code == 200:
     
-        if response.status_code != 200:
     
-            if response.status_code == 429:
+                data = response.json()
     
-                print(
-                    "Profile HTML fallback was rate limited."
+    
+                user = (
+                    data
+                    .get("data", {})
+                    .get("user", {})
                 )
     
-            return None
     
-        html = response.text
+                user_id = user.get(
+                    "id"
+                )
     
-        if not html:
     
-            return None
+                if user_id:
     
-        # --------------------------------------------------------
-        # HTML patterns
-        # --------------------------------------------------------
-    
-        patterns = [
-    
-            r'"profile_id":"(\d+)"',
-    
-            r'"user_id":"(\d+)"',
-    
-            r'"owner":\{"id":"(\d+)"',
-    
-            r'"id":"(\d+)","username":"' +
-            re.escape(username),
-    
-            r'"pk":"(\d+)".{0,500}?"username":"' +
-            re.escape(username),
-    
-        ]
-    
-        for pattern in patterns:
-    
-            match = re.search(
-                pattern,
-                html
-            )
-    
-            if match:
-    
-                try:
-    
-                    owner_id = int(
-                        match.group(1)
+                    user_id = int(
+                        user_id
                     )
+    
     
                     print(
-                        "Story owner ID from HTML:",
-                        owner_id
+                        "Owner ID from API:",
+                        user_id
                     )
     
-                    return owner_id
     
-                except (
-                    TypeError,
-                    ValueError
-                ):
+                    return user_id
     
-                    continue
+    
+        except Exception as e:
+    
+            print(
+                "web_profile_info failed:",
+                e
+            )
+    
     
         print(
-            f"Story owner ID not found for @{username}"
+            "Could not resolve Story owner ID"
         )
     
-        return None
     
+        return None
     
     # ============================================================
     # Find Story Item
@@ -1283,17 +1174,29 @@ class InstagramClient:
         # --------------------------------------------------------
     
         if owner_id is None:
-    
+        
+        
             print(
                 "Owner ID not found in URL."
             )
-    
-            owner_id = self._get_story_owner_id(username)
-            
+        
+        
+            owner_id = self._get_story_owner_id(
+                username
+            )
+        
+        
             if owner_id is None:
+        
                 raise InstagramError(
-                    "Instagram نتوانست Owner ID این Story را resolve کند."
+                    "Instagram نتوانست Owner ID این Story را پیدا کند."
                 )
+        
+        
+            print(
+                "Resolved Owner ID:",
+                owner_id
+            )
     
         # ========================================================
         # Find Story
