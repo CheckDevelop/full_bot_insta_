@@ -814,30 +814,21 @@ class InstagramClient:
     # Instagram Story
     # ============================================================
     
-    def _get_user_id_from_html(
+    def _get_story_owner_id_from_html(
         self,
         session,
-        username: str,
-    ) -> str | None:
-    
-        url = (
-            f"https://www.instagram.com/"
-            f"{username}/"
-        )
-    
-        csrf_token = self._get_cookie(
-            "csrftoken"
-        )
+        story_url: str,
+        media_id: int,
+    ) -> int | None:
     
         headers = {
-            "User-Agent":
-                "Mozilla/5.0",
+            "User-Agent": "Mozilla/5.0",
     
             "X-IG-App-ID":
                 "936619743392459",
     
             "X-CSRFToken":
-                csrf_token or "",
+                self._get_cookie("csrftoken"),
     
             "Referer":
                 "https://www.instagram.com/",
@@ -848,20 +839,18 @@ class InstagramClient:
         }
     
         print(
-            f"Getting profile HTML: @{username}"
+            "Getting Story HTML..."
         )
+    
         print(
-            "REQUEST HEADERS:",
-            headers
+            "Story URL:",
+            story_url
         )
-        
-        print(
-            "REQUEST COOKIES:",
-            session.cookies.get_dict()
-        )
+    
         try:
+    
             response = session.get(
-                url,
+                story_url,
                 headers=headers,
                 timeout=15,
             )
@@ -869,21 +858,21 @@ class InstagramClient:
         except requests.RequestException as exc:
     
             print(
-                "Profile request failed:",
+                "Story HTML request failed:",
                 repr(exc),
             )
     
             return None
     
         print(
-            "Profile status:",
+            "Story HTML status:",
             response.status_code,
         )
     
         if response.status_code != 200:
     
             print(
-                "Profile HTML request failed:",
+                "Story HTML request failed:",
                 response.status_code,
             )
     
@@ -894,39 +883,83 @@ class InstagramClient:
         if not html:
     
             print(
-                "Profile HTML is empty."
+                "Story HTML is empty."
             )
     
             return None
     
+        print(
+            "Story HTML size:",
+            len(html)
+        )
+    
+        # ========================================================
+        # 1. Best match:
+        #
+        # "id":"3964120283462967868_14886042089"
+        # ========================================================
+    
         patterns = [
-            r'"profile_id":"(\d+)"',
-            r'"user_id":"(\d+)"',
-            r'"owner":\{"id":"(\d+)"',
-            r'"id":"(\d+)","username":"' +
-            re.escape(username),
+    
+            rf'"id":"{media_id}_(\d+)"',
+    
+            # Optional escaped/alternate form
+            rf'"id"\s*:\s*"{media_id}_(\d+)"',
+    
+            # Story item with user pk
+            rf'"pk":"{media_id}".*?"user":\{{.*?"pk":"(\d+)"',
+    
+            # Story item with user id
+            rf'"pk":"{media_id}".*?"user":\{{.*?"id":"(\d+)"',
         ]
     
-        for pattern in patterns:
+        for index, pattern in enumerate(
+            patterns,
+            start=1,
+        ):
     
-            match = re.search(
-                pattern,
-                html,
-            )
+            try:
+    
+                match = re.search(
+                    pattern,
+                    html,
+                    re.DOTALL,
+                )
+    
+            except re.error as exc:
+    
+                print(
+                    "Regex error:",
+                    repr(exc),
+                )
+    
+                continue
     
             if match:
     
-                user_id = match.group(1)
+                owner_id = match.group(1)
     
                 print(
-                    "User ID from HTML:",
-                    user_id,
+                    f"Owner ID found in Story HTML "
+                    f"(pattern {index}):",
+                    owner_id,
                 )
     
-                return user_id
+                try:
+    
+                    return int(
+                        owner_id
+                    )
+    
+                except (
+                    TypeError,
+                    ValueError,
+                ):
+    
+                    return None
     
         print(
-            f"User ID not found in HTML for @{username}"
+            "Owner ID was not found in Story HTML."
         )
     
         return None
@@ -960,17 +993,16 @@ class InstagramClient:
             ),
     
             "X-IG-App-ID":
-                "936619743392459",
+            "936619743392459",
     
             "Referer":
-                "https://www.instagram.com/",
+            "https://www.instagram.com/",
     
             "Accept":
-                "*/*",
+            "*/*",
         }
     
         if csrf_token:
-    
             headers["X-CSRFToken"] = csrf_token
     
         print(
@@ -990,7 +1022,7 @@ class InstagramClient:
         try:
     
             response = requests.get(
-                url,
+                api_url,
                 headers=headers,
                 cookies=session.cookies,
                 timeout=15
@@ -1031,7 +1063,6 @@ class InstagramClient:
             reels,
             dict
         ):
-    
             return None
     
         for reel in reels.values():
@@ -1040,7 +1071,6 @@ class InstagramClient:
                 reel,
                 dict
             ):
-    
                 continue
     
             for item in reel.get(
@@ -1052,7 +1082,6 @@ class InstagramClient:
                     item,
                     dict
                 ):
-    
                     continue
     
                 item_id = str(
@@ -1156,7 +1185,7 @@ class InstagramClient:
         # --------------------------------------------------------
     
         if owner_id is None:
-
+        
             print(
                 "Owner ID not found in URL."
             )
@@ -1165,34 +1194,22 @@ class InstagramClient:
                 self.loader.context._session
             )
         
-            owner_id = self._get_user_id_from_html(
-                session,
-                username,
+            owner_id = (
+                self._get_story_owner_id_from_html(
+                    session,
+                    url,
+                    media_id,
+                )
             )
         
             if owner_id is None:
         
                 raise InstagramError(
-                    "User ID استوری از HTML پروفایل پیدا نشد."
-                )
-        
-            try:
-        
-                owner_id = int(
-                    owner_id
-                )
-        
-            except (
-                TypeError,
-                ValueError,
-            ):
-        
-                raise InstagramError(
-                    "User ID دریافت‌شده معتبر نیست."
+                    "Owner ID این Story از HTML خود Story پیدا نشد."
                 )
         
             print(
-                "Owner ID from HTML:",
+                "Owner ID from Story HTML:",
                 owner_id,
             )
     
