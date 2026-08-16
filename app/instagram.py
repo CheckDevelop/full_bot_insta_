@@ -136,6 +136,15 @@ class InstagramClient:
                     loader,
                     raw,
                 )
+            print(
+                "SESSION COOKIES:",
+                loader.context._session.cookies.get_dict()
+            )
+            
+            print(
+                "SESSION HEADERS:",
+                loader.context._session.headers
+            )
 
             # Native Instaloader session file
             else:
@@ -794,6 +803,15 @@ class InstagramClient:
         """
     
         session = self.loader.context._session
+        print(
+            "Story resolver cookies:",
+            session.cookies.get_dict()
+        )
+        print(
+            session.get(
+                "https://api.ipify.org?format=text"
+            ).text
+        )
     
     
         # =====================================================
