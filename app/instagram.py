@@ -1409,53 +1409,45 @@ class InstagramClient:
     # ============================================================
     # Highlights
     # ============================================================
-    def get_highlight_id_from_url(url):
+    @staticmethod
+    def get_highlight_id_from_url(
+        url: str,
+    ) -> str | None:
 
-        """
-        Example:
-    
-        https://www.instagram.com/s/aGlnaGxpZ2h0OjE3OTU2MDUyMzg0NjQ3NTY0?story_media_id=3845518169410282443_14886042089
-    
-        Base64:
-            aGlnaGxpZ2h0OjE3OTU2MDUyMzg0NjQ3NTY0
-    
-        Decoded:
-            highlight:17956052384647564
-        """
-    
-        match = re.search(
-            r"/s/([^?]+)",
-            url
-        )
-    
+        match = HIGHLIGHT_RE2.search(url)
+
         if not match:
-    
             return None
-    
+
         encoded = match.group(1)
-    
+
         try:
-    
-            # اگر padding حذف شده باشد
+
             encoded += "=" * (-len(encoded) % 4)
-    
+
             decoded = base64.b64decode(
                 encoded
-            ).decode(
-                "utf-8"
+            ).decode("utf-8")
+
+            print(
+                "Decoded Highlight:",
+                decoded
             )
-    
+
             if decoded.startswith("highlight:"):
-    
-                return decoded
-    
-        except Exception as e:
-    
+
+                return decoded.split(
+                    ":",
+                    1
+                )[1]
+
+        except Exception as exc:
+
             print(
                 "Highlight decode error:",
-                e
+                repr(exc)
             )
-    
+
         return None
 
     def _download_highlight(
