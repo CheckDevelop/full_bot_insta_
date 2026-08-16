@@ -287,6 +287,10 @@ class InstagramClient:
     
     
             loaded += 1
+            print(
+                "Loaded cookies:",
+                loader.context._session.cookies.get_dict()
+            )
     
     
         if loaded == 0:
@@ -846,9 +850,16 @@ class InstagramClient:
         print(
             f"Getting profile HTML: @{username}"
         )
-    
+        print(
+            "REQUEST HEADERS:",
+            headers
+        )
+        
+        print(
+            "REQUEST COOKIES:",
+            session.cookies.get_dict()
+        )
         try:
-    
             response = session.get(
                 url,
                 headers=headers,
