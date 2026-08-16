@@ -788,6 +788,15 @@ class InstagramClient:
     # ============================================================
 
     def get_user_id_from_html(session, username):
+        def get_cookie(name):
+        
+            for cookie in self.loader.context._session.cookies:
+        
+                if cookie.name == name:
+        
+                    return cookie.value
+        
+            return None
     
         url = f"https://www.instagram.com/{username}/"
     
@@ -809,6 +818,7 @@ class InstagramClient:
             "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
     
         }
+        print("header: ", headers)
     
         response = session.get(
             url,
