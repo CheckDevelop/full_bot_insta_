@@ -1009,60 +1009,50 @@ class InstagramClient:
                 timeout=15,
                 allow_redirects=True,
             )
-    
+        
         except requests.RequestException as exc:
             print(
                 "Story HTML request failed:",
                 repr(exc),
             )
             return None
-    
+        
+        
         print(
             "Story HTML status:",
             response.status_code,
         )
-    
+        
         print(
             "Final URL:",
             response.url,
         )
-    
+        
         print(
             "Content-Length:",
             response.headers.get("content-length"),
         )
-
         
-        page_id = "StoriesPage_5515436726"
-        print(
-            "exists:",
-            page_id in html
-        )
-        idx = html.find(page_id )
-        if idx != -1:
-            print(html[idx-1000:idx+3000])
-
+        
+        if response.status_code != 200:
+            return None
+        
         
         html = response.text
-    
+        
+        
         print(
             "HTML length:",
             len(html),
         )
-    
-        if response.status_code != 200:
-            return None
-    
-        if not html:
-            print("Story HTML is empty.")
-            return None
-    
+            
+        """
         media_id_str = str(media_id)
     
         # ---------------------------------------------------------
         # 1. Check whether media_id actually exists in HTML
         # ---------------------------------------------------------
-    
+
         media_index = html.find(media_id_str)
     
         print(
@@ -1428,7 +1418,7 @@ class InstagramClient:
         )
     
         return None
-
+    """
     # ============================================================
     # Find Story Item
     # ============================================================
