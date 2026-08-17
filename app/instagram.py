@@ -1037,6 +1037,7 @@ class InstagramClient:
         )
     
         html = response.text
+        print(html)
     
         print(
             "HTML length:",
