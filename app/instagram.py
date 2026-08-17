@@ -1232,7 +1232,8 @@ class InstagramClient:
             )
 
         if owner_id is None:
-
+            owner_id = self._extract_user_id_from_html(url)
+            print("Owner ID = ", owner_id)
             print(
                 "Owner ID not found in URL."
             )
