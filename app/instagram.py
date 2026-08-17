@@ -970,6 +970,29 @@ class InstagramClient:
     # Normal Story
     # ============================================================
 
+    def get_story_cdn(username, story_id, session_file):
+        L = instaloader.Instaloader(
+            download_pictures=False,
+            download_videos=False,
+            download_video_thumbnails=False,
+            save_metadata=False,
+            compress_json=False,
+        )
+    
+        L.load_session_from_file(session_file)
+    
+        profile = instaloader.Profile.from_username(
+            L.context,
+            username
+        )
+    
+        for story in L.get_stories(userids=[profile.userid]):
+            for item in story.get_items():
+    
+                if str(item.mediaid) == str(story_id):
+                    return item.url
+    
+        return None
     def _get_story_owner_id_from_html(
         self,
         session,
@@ -1033,8 +1056,6 @@ class InstagramClient:
         )
     
         html = response.text
-        print("Contains User Id:", str(user_id) in html)
-        print("HTML length:", len(html))
     
         print(
             "HTML length:",
