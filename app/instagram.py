@@ -974,6 +974,7 @@ class InstagramClient:
         استخراج user_id از HTML صفحه استوری
         """
         session = self.loader.context._session
+        print(session)
         
         headers = {
             "User-Agent": session.headers.get("User-Agent", "Mozilla/5.0"),
@@ -983,8 +984,6 @@ class InstagramClient:
         }
         
         try:
-            print(f"Fetching HTML from: {url}")
-            
             response = requests.get(
                 url,
                 headers=headers,
@@ -992,45 +991,50 @@ class InstagramClient:
                 timeout=15,
             )
             
-            print(f"HTML Response status: {response.status_code}")
-            
-            if response.status_code != 200:
-                print(f"Failed to fetch HTML: {response.status_code}")
-                return None
-            
             html_content = response.text
             
-            # چک کردن وجود پترن
-            if '"page_logging"' in html_content:
-                print("Found 'page_logging' in HTML")
+            # روش 1: پترن دقیق با فاصله‌گذاری انعطاف‌پذیر
+            pattern1 = r'"page_logging"\s*:\s*\{\s*"name"\s*:\s*"StoriesPage"\s*,\s*"params"\s*:\s*\{\s*"page_id"\s*:\s*"StoriesPage_\d+"\s*\}\s*\}\s*,\s*"user_id"\s*:\s*"(\d+)"\s*,\s*"preload"\s*:\s*true\s*\}'
             
-            # پترن دقیق
-            pattern = r'"page_logging":\{"name":"StoriesPage","params":\{"page_id":"StoriesPage_\d+"\}\},"user_id":"(\d+)","preload":true\}'
-            
-            match = re.search(pattern, html_content)
+            match = re.search(pattern1, html_content)
             if match:
-                user_id = int(match.group(1))
-                print(f"✅ User ID extracted with exact pattern: {user_id}")
-                return user_id
+                return int(match.group(1))
             
-            # پترن انعطاف‌پذیرتر
-            pattern2 = r'"user_id":"(\d{8,})"'  # حداقل 8 رقم
+            # روش 2: جستجوی ساده‌تر - فقط page_logging و user_id نزدیک به هم
+            pattern2 = r'"page_logging".{0,200}"user_id"\s*:\s*"(\d+)"'
+            match = re.search(pattern2, html_content, re.DOTALL)
+            if match:
+                return int(match.group(1))
             
-            matches = re.findall(pattern2, html_content)
-            print(f"Found {len(matches)} user_id matches with pattern2")
+            # روش 3: جستجوی user_id بعد از StoriesPage
+            pattern3 = r'"StoriesPage".{0,300}"user_id"\s*:\s*"(\d+)"'
+            match = re.search(pattern3, html_content, re.DOTALL)
+            if match:
+                return int(match.group(1))
             
+            # روش 4: پیدا کردن بزرگترین عدد که user_id باشه (بیشتر از 8 رقم)
+            pattern4 = r'"user_id"\s*:\s*"(\d{8,})"'
+            matches = re.findall(pattern4, html_content)
             if matches:
-                # حذف duplicates و sort بر اساس تکرار
-                from collections import Counter
-                most_common = Counter(matches).most_common(1)[0][0]
-                user_id = int(most_common)
-                print(f"✅ User ID extracted with fallback pattern: {user_id}")
-                return user_id
-                
+                # فیلتر کردن ID های کوچک (مثل 0, 1 و غیره)
+                valid_ids = [m for m in matches if len(m) > 7]
+                if valid_ids:
+                    return int(valid_ids[0])
+            
+            # روش 5: استخراج از window._sharedData یا __CONFIG__
+            config_pattern = r'window\._sharedData\s*=\s*({.+?});</script>'
+            match = re.search(config_pattern, html_content, re.DOTALL)
+            if match:
+                try:
+                    data = json.loads(match.group(1))
+                    user_id = data.get('config', {}).get('viewer', {}).get('id')
+                    if user_id:
+                        return int(user_id)
+                except:
+                    pass
+            
         except Exception as exc:
-            print(f"❌ Error in _extract_user_id_from_html: {exc}")
-            import traceback
-            traceback.print_exc()
+            print(f"Error extracting user_id: {exc}")
             
         return None
     # ============================================================
