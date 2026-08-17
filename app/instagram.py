@@ -972,7 +972,6 @@ class InstagramClient:
     def _extract_user_id_from_html(self, url: str) -> int | None:
         """
         استخراج user_id از HTML صفحه استوری
-        وقتی reel_owner_id توی URL نیست
         """
         session = self.loader.context._session
         
@@ -984,37 +983,54 @@ class InstagramClient:
         }
         
         try:
+            print(f"Fetching HTML from: {url}")
+            
             response = requests.get(
                 url,
                 headers=headers,
                 cookies=session.cookies,
                 timeout=15,
             )
-            response.raise_for_status()
+            
+            print(f"HTML Response status: {response.status_code}")
+            
+            if response.status_code != 200:
+                print(f"Failed to fetch HTML: {response.status_code}")
+                return None
             
             html_content = response.text
             
-            # پترن دقیق خط مورد نظر
+            # چک کردن وجود پترن
+            if '"page_logging"' in html_content:
+                print("Found 'page_logging' in HTML")
+            
+            # پترن دقیق
             pattern = r'"page_logging":\{"name":"StoriesPage","params":\{"page_id":"StoriesPage_\d+"\}\},"user_id":"(\d+)","preload":true\}'
             
             match = re.search(pattern, html_content)
             if match:
                 user_id = int(match.group(1))
-                print(f"✅ User ID extracted from HTML: {user_id}")
+                print(f"✅ User ID extracted with exact pattern: {user_id}")
                 return user_id
             
-            # اگر پیدا نشد، الگوی ساده‌تر
-            pattern2 = r'"user_id":"(\d+)"'
-            matches = re.findall(pattern2, html_content)
+            # پترن انعطاف‌پذیرتر
+            pattern2 = r'"user_id":"(\d{8,})"'  # حداقل 8 رقم
             
-            # فیلتر کردن ID های تکراری و پیدا کردن owner
-            for uid in matches:
-                if uid.isdigit() and len(uid) > 5:
-                    print(f"✅ User ID found: {uid}")
-                    return int(uid)
-                    
+            matches = re.findall(pattern2, html_content)
+            print(f"Found {len(matches)} user_id matches with pattern2")
+            
+            if matches:
+                # حذف duplicates و sort بر اساس تکرار
+                from collections import Counter
+                most_common = Counter(matches).most_common(1)[0][0]
+                user_id = int(most_common)
+                print(f"✅ User ID extracted with fallback pattern: {user_id}")
+                return user_id
+                
         except Exception as exc:
-            print(f"❌ Error extracting user_id from HTML: {exc}")
+            print(f"❌ Error in _extract_user_id_from_html: {exc}")
+            import traceback
+            traceback.print_exc()
             
         return None
     # ============================================================
