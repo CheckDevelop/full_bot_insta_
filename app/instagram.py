@@ -6,6 +6,7 @@ import logging
 import re
 import shutil
 import uuid
+
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qsl, urlparse
@@ -13,18 +14,25 @@ from urllib.parse import parse_qsl, urlparse
 import instaloader
 import requests
 
+
 logger = logging.getLogger(__name__)
 
+
+# ============================================================
+# URL REGEX
+# ============================================================
 
 INSTAGRAM_URL_RE = re.compile(
     r"^https?://(?:www\.)?instagram\.com/",
     re.I,
 )
 
+
 POST_RE = re.compile(
     r"/(?:p|reel|tv)/([^/?#]+)",
     re.I,
 )
+
 
 STORY_RE = re.compile(
     r"https?://(?:www\.)?instagram\.com/"
@@ -32,24 +40,48 @@ STORY_RE = re.compile(
     r"([^/?]+)/"
     r"(\d+)"
     r"(?:/|\?|$)",
-    re.IGNORECASE
+    re.IGNORECASE,
 )
 
+
+# Example:
+#
+# https://www.instagram.com/stories/highlights/123456789/
+#
 HIGHLIGHT_RE = re.compile(
     r"/stories/highlights/([0-9]+)",
     re.I,
 )
 
 
+# Example:
+#
+# https://www.instagram.com/s/aGlnaGxpZ2h0OjE3OTU2MDUyMzg0NjQ3NTY0
+#
+HIGHLIGHT_RE2 = re.compile(
+    r"/s/([^?]+)",
+    re.I,
+)
+
+
+# ============================================================
+# Exceptions
+# ============================================================
+
+
 class InstagramError(RuntimeError):
     """Base exception for Instagram-related failures."""
 
 
-class InstagramAuthenticationError(InstagramError):
+class InstagramAuthenticationError(
+    InstagramError
+):
     """Instagram session/authentication error."""
 
 
-class InstagramRateLimitError(InstagramError):
+class InstagramRateLimitError(
+    InstagramError
+):
     """Instagram rate-limit error."""
 
     def __init__(
@@ -57,17 +89,33 @@ class InstagramRateLimitError(InstagramError):
         message: str,
         retry_after: int | None = None,
     ) -> None:
+
         super().__init__(message)
+
         self.retry_after = retry_after
+
+
+# ============================================================
+# Media
+# ============================================================
 
 
 @dataclass(frozen=True)
 class MediaFile:
+
     path: Path
-    media_type: str  # "photo" | "video"
+
+    # "photo" | "video"
+    media_type: str
+
+
+# ============================================================
+# Instagram Client
+# ============================================================
 
 
 class InstagramClient:
+
     def __init__(
         self,
         username: str,
@@ -76,11 +124,24 @@ class InstagramClient:
         max_media_bytes: int,
         request_timeout_seconds: int = 60,
     ) -> None:
+
         self.username = username.strip()
-        self.session_b64 = session_b64.strip()
-        self.temp_dir = Path(temp_dir)
-        self.max_media_bytes = int(max_media_bytes)
-        self.request_timeout_seconds = int(request_timeout_seconds)
+
+        self.session_b64 = (
+            session_b64.strip()
+        )
+
+        self.temp_dir = Path(
+            temp_dir
+        )
+
+        self.max_media_bytes = int(
+            max_media_bytes
+        )
+
+        self.request_timeout_seconds = int(
+            request_timeout_seconds
+        )
 
         self.temp_dir.mkdir(
             parents=True,
@@ -88,250 +149,266 @@ class InstagramClient:
         )
 
         self.session_path = (
-            self.temp_dir / f"session-{self.username}"
+            self.temp_dir
+            / f"session-{self.username}"
         )
 
-        self.loader = self._build_loader()
+        self.loader = (
+            self._build_loader()
+        )
 
-    # ============================================================
+    # ========================================================
     # Instagram Session
-    # ============================================================
+    # ========================================================
 
     def _build_loader(
         self,
     ) -> instaloader.Instaloader:
-    
+
         loader = instaloader.Instaloader(
+
             save_metadata=False,
+
             download_comments=False,
+
             user_agent="Mozilla/5.0",
+
             max_connection_attempts=1,
-            request_timeout=self.request_timeout_seconds,
+
+            request_timeout=(
+                self.request_timeout_seconds
+            ),
         )
-    
+
+        # ----------------------------------------------------
+        # Decode Base64 session
+        # ----------------------------------------------------
+
         try:
-    
+
             raw = base64.b64decode(
                 self.session_b64,
                 validate=True,
             )
-    
+
         except Exception as exc:
-    
+
             raise InstagramAuthenticationError(
-                "INSTAGRAM_SESSION_B64 is not valid base64."
+                "INSTAGRAM_SESSION_B64 "
+                "is not valid base64."
             ) from exc
-    
+
         if not raw:
-    
+
             raise InstagramAuthenticationError(
                 "Instagram session is empty."
             )
-    
+
         self.session_path.write_bytes(
             raw
         )
-    
+
+        # ----------------------------------------------------
+        # Load session
+        # ----------------------------------------------------
+
         try:
-    
+
             stripped = raw.lstrip()
-    
-            # ----------------------------------------------------
+
+            # ------------------------------------------------
             # JSON cookies
-            # ----------------------------------------------------
-    
+            # ------------------------------------------------
+
             if (
                 stripped.startswith(b"{")
                 or stripped.startswith(b"[")
             ):
-    
+
                 self._load_json_cookies(
                     loader,
                     raw,
                 )
-    
-            # ----------------------------------------------------
+
+            # ------------------------------------------------
             # Native Instaloader session
-            # ----------------------------------------------------
-    
+            # ------------------------------------------------
+
             else:
-    
+
                 loader.load_session_from_file(
                     self.username,
-                    str(self.session_path),
+                    str(
+                        self.session_path
+                    ),
                 )
-    
+
         except InstagramAuthenticationError:
-    
+
             raise
-    
+
         except Exception as exc:
-    
+
             raise InstagramAuthenticationError(
-                f"Instagram session could not be loaded: {exc}"
+                "Instagram session could not "
+                f"be loaded: {exc}"
             ) from exc
-    
-        # --------------------------------------------------------
-        # IMPORTANT
-        # Use exactly the same headers as the CMD test
-        # --------------------------------------------------------
-    
+
+        # ----------------------------------------------------
+        # Headers
+        # ----------------------------------------------------
+
         loader.context._session.headers.update(
             {
-                "User-Agent": "Mozilla/5.0",
-    
+
+                "User-Agent":
+                    "Mozilla/5.0",
+
                 "X-IG-App-ID":
                     "936619743392459",
-    
+
                 "Referer":
                     "https://www.instagram.com/",
-    
+
                 "Accept":
                     "*/*",
             }
         )
-    
+
         logger.info(
             "Instagram session loaded for @%s; "
             "startup login validation skipped",
             self.username,
         )
-    
+
         return loader
+
+    # ========================================================
+    # JSON Cookies
+    # ========================================================
 
     def _load_json_cookies(
         self,
         loader: instaloader.Instaloader,
         raw: bytes,
     ) -> None:
-    
+
         try:
-    
+
             data = json.loads(
                 raw.decode("utf-8")
             )
-    
+
         except Exception as exc:
-    
+
             raise InstagramAuthenticationError(
                 "Instagram JSON session is invalid."
             ) from exc
-    
-    
+
         cookies = (
             data.get("cookies")
-            if isinstance(data, dict)
+            if isinstance(
+                data,
+                dict,
+            )
             else data
         )
-    
-    
+
         if not isinstance(
             cookies,
-            list
+            list,
         ):
-    
+
             raise InstagramAuthenticationError(
                 "Cookies list not found."
             )
-    
-    
+
         loaded = 0
-    
-    
+
         for cookie in cookies:
-    
+
             if not isinstance(
                 cookie,
-                dict
+                dict,
             ):
+
                 continue
-    
-    
+
             name = cookie.get(
                 "name"
             )
-    
+
             value = cookie.get(
                 "value"
             )
-    
-    
+
             if not name or value is None:
-    
+
                 continue
-    
-    
+
             domain = cookie.get(
                 "domain",
-                ".instagram.com"
+                ".instagram.com",
             )
-    
-    
+
             path = cookie.get(
                 "path",
-                "/"
+                "/",
             )
-    
-    
+
             if "instagram.com" not in domain:
-    
+
                 domain = ".instagram.com"
-    
-    
+
             loader.context._session.cookies.set(
+
                 name,
+
                 value,
+
                 domain=domain,
+
                 path=path,
             )
-    
-    
+
             loaded += 1
-            print(
-                "Loaded cookies:",
-                loader.context._session.cookies.get_dict()
-            )
-    
-    
+
         if loaded == 0:
-    
+
             raise InstagramAuthenticationError(
                 "No Instagram cookies loaded."
             )
-    
-    
+
         logger.info(
             "Loaded %s Instagram cookies",
             loaded,
         )
-    # ============================================================
+
+    # ========================================================
     # Cookie helper
-    # ============================================================
+    # ========================================================
 
     def _get_cookie(
         self,
         name: str,
     ) -> str:
-        """
-        Safely read a cookie.
-
-        requests.cookies.get() raises CookieConflictError when
-        multiple cookies have the same name but different
-        domains/paths. Instagram cookie exports can contain exactly
-        that situation.
-
-        We prefer an Instagram-wide cookie and otherwise use the
-        first matching cookie.
-        """
 
         candidates = []
 
-        for cookie in self.loader.context._session.cookies:
+        for cookie in (
+            self.loader.context
+            ._session
+            .cookies
+        ):
 
             if cookie.name == name:
-                candidates.append(cookie)
+
+                candidates.append(
+                    cookie
+                )
 
         if not candidates:
+
             return ""
 
         preferred_domains = {
@@ -342,18 +419,23 @@ class InstagramClient:
         for cookie in candidates:
 
             if (
-                str(cookie.domain).lower()
+                str(
+                    cookie.domain
+                ).lower()
                 in preferred_domains
             ):
-                return str(cookie.value)
+
+                return str(
+                    cookie.value
+                )
 
         return str(
             candidates[0].value
         )
 
-    # ============================================================
+    # ========================================================
     # URL validation
-    # ============================================================
+    # ========================================================
 
     @staticmethod
     def validate_url(
@@ -362,12 +444,15 @@ class InstagramClient:
 
         normalized = url.strip()
 
-        parsed = urlparse(normalized)
+        parsed = urlparse(
+            normalized
+        )
 
         if parsed.scheme not in {
             "http",
             "https",
         }:
+
             raise InstagramError(
                 "لینک اینستاگرام معتبر نیست."
             )
@@ -376,38 +461,55 @@ class InstagramClient:
             "instagram.com",
             "www.instagram.com",
         }:
+
             raise InstagramError(
                 "لینک اینستاگرام معتبر نیست."
             )
 
         return normalized
 
-    # ============================================================
+    # ========================================================
     # Dispatcher
-    # ============================================================
+    # ========================================================
 
     def download(
         self,
         url: str,
     ) -> list[MediaFile]:
 
-        url = self.validate_url(url)
+        url = self.validate_url(
+            url
+        )
 
-        # IMPORTANT:
-        # Highlight URLs also match STORY_RE.
-        # Therefore Highlight MUST come first.
+        # ----------------------------------------------------
+        # IMPORTANT
+        #
+        # /s/... is Highlight
+        # and must be checked before Story.
+        # ----------------------------------------------------
 
-        if HIGHLIGHT_RE.search(url):
+        if (
+            HIGHLIGHT_RE.search(url)
+            or HIGHLIGHT_RE2.search(url)
+        ):
 
             return self._download_highlight(
                 url
             )
+
+        # ----------------------------------------------------
+        # Normal Story
+        # ----------------------------------------------------
 
         if STORY_RE.search(url):
 
             return self._download_story(
                 url
             )
+
+        # ----------------------------------------------------
+        # Post / Reel / TV
+        # ----------------------------------------------------
 
         if POST_RE.search(url):
 
@@ -420,11 +522,13 @@ class InstagramClient:
             "در نسخه فعلی پشتیبانی نمی‌شود."
         )
 
-    # ============================================================
-    # Temporary job directory
-    # ============================================================
+    # ========================================================
+    # Temporary Job Directory
+    # ========================================================
 
-    def _new_job_dir(self) -> Path:
+    def _new_job_dir(
+        self,
+    ) -> Path:
 
         job_dir = (
             self.temp_dir
@@ -438,9 +542,9 @@ class InstagramClient:
 
         return job_dir
 
-    # ============================================================
-    # Instagram HTTP error handling
-    # ============================================================
+    # ========================================================
+    # Instagram HTTP Errors
+    # ========================================================
 
     def _raise_for_instagram_response(
         self,
@@ -456,8 +560,8 @@ class InstagramClient:
         }:
 
             raise InstagramAuthenticationError(
-                f"Instagram returned HTTP {status} "
-                f"while {context}."
+                f"Instagram returned HTTP "
+                f"{status} while {context}."
             )
 
         if status == 429:
@@ -473,23 +577,26 @@ class InstagramClient:
             if retry_after_raw:
 
                 try:
+
                     retry_after = int(
                         retry_after_raw
                     )
+
                 except ValueError:
+
                     retry_after = None
 
             raise InstagramRateLimitError(
-                f"Instagram rate-limited the request "
-                f"while {context}.",
+                "Instagram rate-limited "
+                f"the request while {context}.",
                 retry_after=retry_after,
             )
 
         response.raise_for_status()
 
-    # ============================================================
-    # Direct media download
-    # ============================================================
+    # ========================================================
+    # Direct Media Download
+    # ========================================================
 
     def _download_url(
         self,
@@ -498,24 +605,38 @@ class InstagramClient:
     ) -> None:
 
         headers = {
-            "User-Agent": self.loader.context._session.headers.get(
-                "User-Agent",
-                "Mozilla/5.0",
-            ),
-            "Referer": "https://www.instagram.com/",
+
+            "User-Agent":
+                self.loader.context
+                ._session
+                .headers.get(
+                    "User-Agent",
+                    "Mozilla/5.0",
+                ),
+
+            "Referer":
+                "https://www.instagram.com/",
         }
 
         try:
 
-            with self.loader.context._session.get(
-                url,
-                headers=headers,
-                stream=True,
-                timeout=(
-                    20,
-                    self.request_timeout_seconds,
-                ),
-                allow_redirects=True,
+            with (
+                self.loader.context
+                ._session
+                .get(
+                    url,
+
+                    headers=headers,
+
+                    stream=True,
+
+                    timeout=(
+                        20,
+                        self.request_timeout_seconds,
+                    ),
+
+                    allow_redirects=True,
+                )
             ) as response:
 
                 self._raise_for_instagram_response(
@@ -537,11 +658,14 @@ class InstagramClient:
                             int(content_length)
                             > self.max_media_bytes
                         ):
+
                             raise InstagramError(
-                                "فایل بیش از حد مجاز بزرگ است."
+                                "فایل بیش از حد "
+                                "مجاز بزرگ است."
                             )
 
                     except ValueError:
+
                         pass
 
                 total = 0
@@ -555,16 +679,21 @@ class InstagramClient:
                     ):
 
                         if not chunk:
+
                             continue
 
-                        total += len(chunk)
+                        total += len(
+                            chunk
+                        )
 
                         if (
                             total
                             > self.max_media_bytes
                         ):
+
                             raise InstagramError(
-                                "فایل بیش از حد مجاز بزرگ است."
+                                "فایل بیش از حد "
+                                "مجاز بزرگ است."
                             )
 
                         file_handle.write(
@@ -572,6 +701,7 @@ class InstagramClient:
                         )
 
         except InstagramError:
+
             raise
 
         except requests.exceptions.Timeout as exc:
@@ -584,19 +714,22 @@ class InstagramClient:
         except requests.exceptions.RequestException as exc:
 
             raise InstagramError(
-                f"خطا در دانلود فایل از Instagram: {exc}"
+                f"خطا در دانلود فایل "
+                f"از Instagram: {exc}"
             ) from exc
 
-    # ============================================================
-    # Post / Reel / TV / Carousel
-    # ============================================================
+    # ========================================================
+    # POST / REEL / TV
+    # ========================================================
 
     def _download_post(
         self,
         url: str,
     ) -> list[MediaFile]:
 
-        match = POST_RE.search(url)
+        match = POST_RE.search(
+            url
+        )
 
         if not match:
 
@@ -604,7 +737,9 @@ class InstagramClient:
                 "URL پست معتبر نیست."
             )
 
-        shortcode = match.group(1)
+        shortcode = match.group(
+            1
+        )
 
         job_dir = self._new_job_dir()
 
@@ -615,43 +750,60 @@ class InstagramClient:
             try:
 
                 post = (
-                    instaloader.Post.from_shortcode(
+                    instaloader
+                    .Post
+                    .from_shortcode(
                         self.loader.context,
                         shortcode,
                     )
                 )
 
-            except instaloader.exceptions.LoginRequiredException as exc:
+            except (
+                instaloader
+                .exceptions
+                .LoginRequiredException
+            ) as exc:
 
                 raise InstagramAuthenticationError(
                     "Session اینستاگرام "
                     "برای این پست معتبر نیست."
                 ) from exc
 
-            except instaloader.exceptions.QueryReturnedNotFoundException as exc:
+            except (
+                instaloader
+                .exceptions
+                .QueryReturnedNotFoundException
+            ) as exc:
 
                 raise InstagramError(
-                    "پست پیدا نشد یا در دسترس نیست."
+                    "پست پیدا نشد یا "
+                    "در دسترس نیست."
                 ) from exc
 
             except Exception as exc:
 
-                message = str(exc).lower()
+                message = str(
+                    exc
+                ).lower()
 
                 if (
                     "429" in message
-                    or "too many requests"
+                    or
+                    "too many requests"
                     in message
                 ):
 
                     raise InstagramRateLimitError(
                         "Instagram هنگام دریافت "
-                        "اطلاعات پست rate limit اعمال کرده."
+                        "اطلاعات پست rate limit "
+                        "اعمال کرده."
                     ) from exc
 
                 if (
                     "401" in message
-                    or "unauthorized" in message
+                    or
+                    "unauthorized"
+                    in message
                 ):
 
                     raise InstagramAuthenticationError(
@@ -660,7 +812,8 @@ class InstagramClient:
                     ) from exc
 
                 raise InstagramError(
-                    f"خطا در دریافت اطلاعات پست: {exc}"
+                    "خطا در دریافت اطلاعات "
+                    f"پست: {exc}"
                 ) from exc
 
             username = (
@@ -668,15 +821,16 @@ class InstagramClient:
                 or "instagram"
             )
 
-            # -------------------------
+            # ------------------------------------------------
             # Photo
-            # -------------------------
+            # ------------------------------------------------
 
             if post.typename == "GraphImage":
 
                 path = (
                     job_dir
-                    / f"{username}_{shortcode}.jpg"
+                    /
+                    f"{username}_{shortcode}.jpg"
                 )
 
                 self._download_url(
@@ -691,9 +845,9 @@ class InstagramClient:
                     )
                 )
 
-            # -------------------------
+            # ------------------------------------------------
             # Video
-            # -------------------------
+            # ------------------------------------------------
 
             elif post.typename == "GraphVideo":
 
@@ -705,7 +859,8 @@ class InstagramClient:
 
                 path = (
                     job_dir
-                    / f"{username}_{shortcode}.mp4"
+                    /
+                    f"{username}_{shortcode}.mp4"
                 )
 
                 self._download_url(
@@ -720,9 +875,9 @@ class InstagramClient:
                     )
                 )
 
-            # -------------------------
+            # ------------------------------------------------
             # Carousel
-            # -------------------------
+            # ------------------------------------------------
 
             elif post.typename == "GraphSidecar":
 
@@ -742,7 +897,8 @@ class InstagramClient:
 
                         path = (
                             job_dir
-                            / (
+                            /
+                            (
                                 f"{username}_"
                                 f"{shortcode}_"
                                 f"{index}.mp4"
@@ -772,7 +928,8 @@ class InstagramClient:
 
                         path = (
                             job_dir
-                            / (
+                            /
+                            (
                                 f"{username}_"
                                 f"{shortcode}_"
                                 f"{index}.jpg"
@@ -794,7 +951,7 @@ class InstagramClient:
             else:
 
                 raise InstagramError(
-                    f"نوع پست پشتیبانی نمی‌شود: "
+                    "نوع پست پشتیبانی نمی‌شود: "
                     f"{post.typename}"
                 )
 
@@ -809,644 +966,145 @@ class InstagramClient:
 
             raise
 
-    
     # ============================================================
-    # Instagram Story
+    # Find User Id
     # ============================================================
-    
-    def _get_story_owner_id_from_html(
+    def _get_user_id_from_html(
         self,
-        session,
-        story_url: str,
-        media_id: int,
+        username: str,
     ) -> int | None:
     
+        url = (
+            f"https://www.instagram.com/{username}/"
+        )
+    
+        session = (
+            self.loader.context._session
+        )
+    
         headers = {
-            "User-Agent": "Mozilla/5.0",
     
-            "X-IG-App-ID":
-                "936619743392459",
-    
-            "X-CSRFToken":
-                self._get_cookie("csrftoken"),
+            "User-Agent":
+                session.headers.get(
+                    "User-Agent",
+                    "Mozilla/5.0",
+                ),
     
             "Referer":
                 "https://www.instagram.com/",
     
             "Accept":
-                "text/html,application/xhtml+xml,"
-                "application/xml;q=0.9,*/*;q=0.8",
+                "text/html,*/*",
+    
         }
     
-        print(
-            "Getting Story HTML..."
-        )
-    
-        print(
-            "Story URL:",
-            story_url
-        )
     
         try:
     
             response = session.get(
-                story_url,
+                url,
                 headers=headers,
-                timeout=15,
+                timeout=30,
             )
     
         except requests.RequestException as exc:
     
-            print(
-                "Story HTML request failed:",
-                repr(exc),
+            raise InstagramError(
+                f"خطا در دریافت HTML پروفایل: {exc}"
             )
     
-            return None
     
-        print(
-            "Story HTML status:",
-            response.status_code,
+        self._raise_for_instagram_response(
+            response,
+            "getting profile HTML"
         )
     
-        if response.status_code != 200:
-    
-            print(
-                "Story HTML request failed:",
-                response.status_code,
-            )
-    
-            return None
     
         html = response.text
     
-        if not html:
-    
-            print(
-                "Story HTML is empty."
-            )
-    
-            return None
-    
-        print(
-            "Story HTML size:",
-            len(html)
-        )
-    
-        # ========================================================
-        # 1. Best match:
-        #
-        # "id":"3964120283462967868_14886042089"
-        # ========================================================
     
         patterns = [
     
-            rf'"id":"{media_id}_(\d+)"',
+            # جدید
+            r'"profile_id":"(\d+)"',
     
-            # Optional escaped/alternate form
-            rf'"id"\s*:\s*"{media_id}_(\d+)"',
+            # user object
+            r'"user_id":"(\d+)"',
     
-            # Story item with user pk
-            rf'"pk":"{media_id}".*?"user":\{{.*?"pk":"(\d+)"',
+            # graphql data
+            r'"id":"(\d+)","username":"'
+            + re.escape(username),
     
-            # Story item with user id
-            rf'"pk":"{media_id}".*?"user":\{{.*?"id":"(\d+)"',
+            # legacy
+            r'"owner_id":"(\d+)"',
+    
         ]
     
-        for index, pattern in enumerate(
-            patterns,
-            start=1,
-        ):
     
-            try:
+        for pattern in patterns:
     
-                match = re.search(
-                    pattern,
-                    html,
-                    re.DOTALL,
-                )
-    
-            except re.error as exc:
-    
-                print(
-                    "Regex error:",
-                    repr(exc),
-                )
-    
-                continue
+            match = re.search(
+                pattern,
+                html,
+                re.IGNORECASE,
+            )
     
             if match:
     
-                owner_id = match.group(1)
-    
-                print(
-                    f"Owner ID found in Story HTML "
-                    f"(pattern {index}):",
-                    owner_id,
+                user_id = int(
+                    match.group(1)
                 )
     
-                try:
+                logger.info(
+                    "User ID found from HTML: %s",
+                    user_id,
+                )
     
-                    return int(
-                        owner_id
-                    )
+                return user_id
     
-                except (
-                    TypeError,
-                    ValueError,
-                ):
-    
-                    return None
-    
-        print(
-            "Owner ID was not found in Story HTML."
-        )
     
         return None
-    
     # ============================================================
     # Find Story Item
     # ============================================================
-    
+
     def _find_story_item(
         self,
         username: str,
         media_id: int,
         owner_id: int,
     ) -> dict | None:
-    
+
         api_url = (
-            "https://www.instagram.com/api/v1/feed/reels_media/"
+            "https://www.instagram.com/"
+            "api/v1/feed/reels_media/"
             f"?reel_ids={owner_id}"
         )
-    
-        session = self.loader.context._session
-    
-        csrf_token = self._get_cookie(
-            "csrftoken"
-        )
-    
-        headers = {
-            "User-Agent": session.headers.get(
-                "User-Agent",
-                "Mozilla/5.0"
-            ),
-    
-            "X-IG-App-ID":
-            "936619743392459",
-    
-            "Referer":
-            "https://www.instagram.com/",
-    
-            "Accept":
-            "*/*",
-        }
-    
-        if csrf_token:
-            headers["X-CSRFToken"] = csrf_token
-    
-        print(
-            "Getting story metadata..."
-        )
-    
-        print(
-            "Owner ID:",
-            owner_id
-        )
-    
-        print(
-            "Media ID:",
-            media_id
-        )
-    
-        try:
-    
-            response = requests.get(
-                api_url,
-                headers=headers,
-                cookies=session.cookies,
-                timeout=15
-            )
-    
-        except requests.RequestException as exc:
-    
-            raise InstagramError(
-                f"خطا در دریافت اطلاعات استوری: {exc}"
-            ) from exc
-    
-        print(
-            "Story API status:",
-            response.status_code
-        )
-    
-        self._raise_for_instagram_response(
-            response,
-            "getting story metadata"
-        )
-    
-        try:
-    
-            data = response.json()
-    
-        except ValueError as exc:
-    
-            raise InstagramError(
-                "پاسخ Instagram برای Story معتبر نیست."
-            ) from exc
-    
-        reels = data.get(
-            "reels",
-            {}
-        )
-    
-        if not isinstance(
-            reels,
-            dict
-        ):
-            return None
-    
-        for reel in reels.values():
-    
-            if not isinstance(
-                reel,
-                dict
-            ):
-                continue
-    
-            for item in reel.get(
-                "items",
-                []
-            ):
-    
-                if not isinstance(
-                    item,
-                    dict
-                ):
-                    continue
-    
-                item_id = str(
-                    item.get("pk", "")
-                )
-    
-                if item_id == str(
-                    media_id
-                ):
-    
-                    print(
-                        "Story item found:",
-                        item_id
-                    )
-    
-                    return item
-    
-        print(
-            "Story media ID was not found."
-        )
-    
-        return None
-    
-    
-    # ============================================================
-    # Download Story
-    # ============================================================
-    
-    def _download_story(
-        self,
-        url: str,
-    ) -> list[MediaFile]:
-    
-        # --------------------------------------------------------
-        # Parse Story URL
-        # --------------------------------------------------------
-    
-        match = STORY_RE.search(
-            url
-        )
-    
-        if not match:
-    
-            raise InstagramError(
-                "URL استوری معتبر نیست."
-            )
-    
-        username = match.group(1)
-    
-        media_id = int(
-            match.group(2)
-        )
-    
-        print(
-            "Story username:",
-            username
-        )
-    
-        print(
-            "Story media ID:",
-            media_id
-        )
-    
-        # --------------------------------------------------------
-        # Get owner ID from URL
-        # --------------------------------------------------------
-    
-        parsed = urlparse(
-            url
-        )
-    
-        owner_id = None
-    
-        query_params = dict(
-            parse_qsl(
-                parsed.query
-            )
-        )
-    
-        # Primary parameter
-        reel_owner_id = query_params.get(
-            "reel_owner_id"
-        )
-    
-        if (
-            reel_owner_id
-            and reel_owner_id.isdigit()
-        ):
-    
-            owner_id = int(
-                reel_owner_id
-            )
-    
-            print(
-                "Owner ID found in URL:",
-                owner_id
-            )
-    
-        # --------------------------------------------------------
-        # If owner ID is not in URL
-        # --------------------------------------------------------
-    
-        if owner_id is None:
-        
-            print(
-                "Owner ID not found in URL."
-            )
-        
-            session = (
-                self.loader.context._session
-            )
-        
-            owner_id = (
-                self._get_story_owner_id_from_html(
-                    session,
-                    url,
-                    media_id,
-                )
-            )
-        
-            if owner_id is None:
-        
-                raise InstagramError(
-                    "Owner ID این Story از HTML خود Story پیدا نشد."
-                )
-        
-            print(
-                "Owner ID from Story HTML:",
-                owner_id,
-            )
-    
-        # ========================================================
-        # Find Story
-        # ========================================================
-    
-        item = self._find_story_item(
-            username,
-            media_id,
-            owner_id
-        )
-    
-        if item is None:
-    
-            raise InstagramError(
-                "استوری پیدا نشد، منقضی شده یا "
-                "Media ID مربوط به این User نیست."
-            )
-    
-        # ========================================================
-        # Create job directory
-        # ========================================================
-    
-        job_dir = self._new_job_dir()
-    
-        try:
-    
-            media_type = item.get(
-                "media_type"
-            )
-    
-            # ----------------------------------------------------
-            # VIDEO
-            # ----------------------------------------------------
-    
-            if media_type == 2:
-    
-                video_versions = item.get(
-                    "video_versions",
-                    []
-                )
-    
-                media_url = None
-    
-                for version in video_versions:
-    
-                    if not isinstance(
-                        version,
-                        dict
-                    ):
-    
-                        continue
-    
-                    candidate_url = version.get(
-                        "url"
-                    )
-    
-                    if candidate_url:
-    
-                        media_url = candidate_url
-    
-                        break
-    
-                if not media_url:
-    
-                    raise InstagramError(
-                        "CDN URL ویدئوی استوری پیدا نشد."
-                    )
-    
-                path = (
-                    job_dir /
-                    f"{username}_story_{media_id}.mp4"
-                )
-    
-                file_type = "video"
-    
-            # ----------------------------------------------------
-            # PHOTO
-            # ----------------------------------------------------
-    
-            elif media_type == 1:
-    
-                candidates = (
-                    item
-                    .get(
-                        "image_versions2",
-                        {}
-                    )
-                    .get(
-                        "candidates",
-                        []
-                    )
-                )
-    
-                media_url = None
-    
-                for candidate in candidates:
-    
-                    if not isinstance(
-                        candidate,
-                        dict
-                    ):
-    
-                        continue
-    
-                    candidate_url = candidate.get(
-                        "url"
-                    )
-    
-                    if candidate_url:
-    
-                        media_url = candidate_url
-    
-                        break
-    
-                if not media_url:
-    
-                    raise InstagramError(
-                        "CDN URL تصویر استوری پیدا نشد."
-                    )
-    
-                path = (
-                    job_dir /
-                    f"{username}_story_{media_id}.jpg"
-                )
-    
-                file_type = "photo"
-    
-            # ----------------------------------------------------
-            # Unsupported
-            # ----------------------------------------------------
-    
-            else:
-    
-                raise InstagramError(
-                    f"نوع استوری پشتیبانی نمی‌شود: "
-                    f"{media_type}"
-                )
-    
-            # ----------------------------------------------------
-            # CDN
-            # ----------------------------------------------------
-    
-            print(
-                "========================================"
-            )
-    
-            print(
-                "Story CDN URL:"
-            )
-    
-            print(
-                media_url
-            )
-    
-            print(
-                "========================================"
-            )
-    
-            # ----------------------------------------------------
-            # Download
-            # ----------------------------------------------------
-    
-            self._download_url(
-                media_url,
-                path
-            )
-    
-            print(
-                "Story downloaded:"
-            )
-    
-            print(
-                path
-            )
-    
-            return [
-                MediaFile(
-                    path,
-                    file_type
-                )
-            ]
-    
-        except Exception:
-    
-            shutil.rmtree(
-                job_dir,
-                ignore_errors=True
-            )
-    
-            raise
-    # ============================================================
-    # Highlights
-    # ============================================================
-
-    def _download_highlight(
-        self,
-        url: str,
-    ) -> list[MediaFile]:
-
-        match = HIGHLIGHT_RE.search(url)
-
-        if not match:
-
-            raise InstagramError(
-                "URL هایلایت معتبر نیست."
-            )
-
-        highlight_id = match.group(1)
 
         session = (
             self.loader.context._session
         )
 
-        api_url = (
-            "https://www.instagram.com/"
-            "api/v1/feed/reels_media/"
-            f"?reel_ids=highlight:{highlight_id}"
-        )
-
-        # IMPORTANT:
-        # Do not use session.cookies.get("csrftoken")
-        # because requests raises CookieConflictError when
-        # multiple csrftoken cookies exist.
         csrf_token = self._get_cookie(
             "csrftoken"
         )
 
         headers = {
-            "User-Agent": session.headers.get(
-                "User-Agent",
-                "Mozilla/5.0",
-            ),
-            "X-IG-App-ID": "936619743392459",
-            "Referer": "https://www.instagram.com/",
-            "Accept": "*/*",
+
+            "User-Agent":
+                session.headers.get(
+                    "User-Agent",
+                    "Mozilla/5.0"
+                ),
+
+            "X-IG-App-ID":
+                "936619743392459",
+
+            "Referer":
+                "https://www.instagram.com/",
+
+            "Accept":
+                "*/*",
         }
 
         if csrf_token:
@@ -1457,33 +1115,622 @@ class InstagramClient:
 
         try:
 
-            response = session.get(
+            response = requests.get(
+
                 api_url,
+
                 headers=headers,
+
+                cookies=session.cookies,
+
+                timeout=15,
+            )
+
+        except requests.RequestException as exc:
+
+            raise InstagramError(
+                f"خطا در دریافت اطلاعات "
+                f"استوری: {exc}"
+            ) from exc
+
+        print(
+            "Story API status:",
+            response.status_code
+        )
+
+        self._raise_for_instagram_response(
+            response,
+            "getting story metadata"
+        )
+
+        try:
+
+            data = response.json()
+
+        except ValueError as exc:
+
+            raise InstagramError(
+                "پاسخ Instagram برای "
+                "Story معتبر نیست."
+            ) from exc
+
+        reels = data.get(
+            "reels",
+            {}
+        )
+
+        if not isinstance(
+            reels,
+            dict
+        ):
+
+            return None
+
+        for reel in reels.values():
+
+            if not isinstance(
+                reel,
+                dict
+            ):
+
+                continue
+
+            for item in reel.get(
+                "items",
+                []
+            ):
+
+                if not isinstance(
+                    item,
+                    dict
+                ):
+
+                    continue
+
+                item_id = str(
+                    item.get(
+                        "pk",
+                        ""
+                    )
+                )
+
+                if item_id == str(
+                    media_id
+                ):
+
+                    print(
+                        "Story item found:",
+                        item_id
+                    )
+
+                    return item
+
+        return None
+
+    # ============================================================
+    # Download Normal Story
+    # ============================================================
+
+    def _download_story(
+        self,
+        url: str,
+    ) -> list[MediaFile]:
+
+        match = STORY_RE.search(
+            url
+        )
+
+        if not match:
+            raise InstagramError(
+                "URL استوری معتبر نیست."
+            )
+            
+        username = match.group(
+            1
+        )
+
+        media_id = int(
+            match.group(
+                2
+            )
+        )
+
+        print(
+            "Story username:",
+            username
+        )
+
+        print(
+            "Story media ID:",
+            media_id
+        )
+
+        parsed = urlparse(
+            url
+        )
+
+        query_params = dict(
+            parse_qsl(
+                parsed.query
+            )
+        )
+
+        owner_id = None
+
+        reel_owner_id = (
+            query_params.get(
+                "reel_owner_id"
+            )
+        )
+
+        if (
+            reel_owner_id
+            and
+            reel_owner_id.isdigit()
+        ):
+
+            owner_id = int(
+                reel_owner_id
+            )
+
+            print(
+                "Owner ID from URL:",
+                owner_id
+            )
+
+        if owner_id is None:
+
+            print(
+                "Owner ID not found in URL."
+            )
+        
+            print(
+                "Trying HTML profile..."
+            )
+        
+        
+            owner_id = (
+                self
+                ._get_user_id_from_html(
+                    username
+                )
+            )
+        
+        
+            if owner_id:
+        
+                print(
+                    "Owner ID from HTML:",
+                    owner_id
+                )
+        
+            else:
+        
+                raise InstagramError(
+                    "User ID از HTML پیدا نشد."
+                )
+
+        print(
+            "Owner ID:",
+            owner_id
+        )
+ 
+        item = self._find_story_item(
+            username,
+            media_id,
+            owner_id,
+        )
+
+        if item is None:
+
+            raise InstagramError(
+                "استوری پیدا نشد، "
+                "منقضی شده یا Media ID "
+                "مربوط به این User نیست."
+            )
+
+        job_dir = self._new_job_dir()
+
+        try:
+
+            media_type = item.get(
+                "media_type"
+            )
+
+            # ------------------------------------------------
+            # Video
+            # ------------------------------------------------
+
+            if media_type == 2:
+
+                versions = (
+                    item.get(
+                        "video_versions"
+                    )
+                    or []
+                )
+
+                if not versions:
+
+                    raise InstagramError(
+                        "CDN URL ویدئو "
+                        "پیدا نشد."
+                    )
+
+                versions = sorted(
+                    versions,
+                    key=lambda x:
+                        (
+                            x.get(
+                                "width",
+                                0
+                            )
+                            *
+                            x.get(
+                                "height",
+                                0
+                            )
+                        ),
+                    reverse=True,
+                )
+
+                media_url = (
+                    versions[0].get(
+                        "url"
+                    )
+                )
+
+                path = (
+                    job_dir
+                    /
+                    f"{username}_"
+                    f"story_{media_id}.mp4"
+                )
+
+                media_type_name = (
+                    "video"
+                )
+
+            # ------------------------------------------------
+            # Photo
+            # ------------------------------------------------
+
+            elif media_type == 1:
+
+                candidates = (
+                    item.get(
+                        "image_versions2",
+                        {},
+                    ).get(
+                        "candidates"
+                    )
+                    or []
+                )
+
+                if not candidates:
+
+                    raise InstagramError(
+                        "CDN URL تصویر "
+                        "پیدا نشد."
+                    )
+
+                candidates = sorted(
+                    candidates,
+                    key=lambda x:
+                        (
+                            x.get(
+                                "width",
+                                0
+                            )
+                            *
+                            x.get(
+                                "height",
+                                0
+                            )
+                        ),
+                    reverse=True,
+                )
+
+                media_url = (
+                    candidates[0].get(
+                        "url"
+                    )
+                )
+
+                path = (
+                    job_dir
+                    /
+                    f"{username}_"
+                    f"story_{media_id}.jpg"
+                )
+
+                media_type_name = (
+                    "photo"
+                )
+
+            else:
+
+                raise InstagramError(
+                    f"نوع استوری "
+                    f"پشتیبانی نمی‌شود: "
+                    f"{media_type}"
+                )
+
+            if not media_url:
+
+                raise InstagramError(
+                    "CDN URL پیدا نشد."
+                )
+
+            print()
+            print(
+                "Story CDN URL:"
+            )
+            print(
+                media_url
+            )
+            print()
+
+            self._download_url(
+                media_url,
+                path,
+            )
+
+            return [
+                MediaFile(
+                    path,
+                    media_type_name,
+                )
+            ]
+
+        except Exception:
+
+            shutil.rmtree(
+                job_dir,
+                ignore_errors=True,
+            )
+
+            raise
+
+    # ============================================================
+    # Highlight ID
+    # ============================================================
+
+    @staticmethod
+    def get_highlight_id_from_url(
+        url: str,
+    ) -> str | None:
+
+        match = HIGHLIGHT_RE2.search(
+            url
+        )
+
+        if not match:
+
+            return None
+
+        encoded = match.group(
+            1
+        )
+
+        try:
+
+            encoded += "=" * (
+                -len(encoded) % 4
+            )
+
+            decoded = (
+                base64
+                .b64decode(
+                    encoded
+                )
+                .decode(
+                    "utf-8"
+                )
+            )
+
+            print(
+                "Decoded Highlight:",
+                decoded
+            )
+
+            if decoded.startswith(
+                "highlight:"
+            ):
+
+                return decoded.split(
+                    ":",
+                    1
+                )[1]
+
+        except Exception as exc:
+
+            print(
+                "Highlight decode error:",
+                repr(exc)
+            )
+
+        return None
+
+    # ============================================================
+    # Story Media ID from Highlight URL
+    # ============================================================
+
+    @staticmethod
+    def get_story_media_id_from_url(
+        url: str,
+    ) -> str | None:
+
+        parsed = urlparse(
+            url
+        )
+
+        params = dict(
+            parse_qsl(
+                parsed.query
+            )
+        )
+
+        story_media_id = (
+            params.get(
+                "story_media_id"
+            )
+        )
+
+        if not story_media_id:
+
+            return None
+
+        # Example:
+        #
+        # 3845518169410282443_14886042089
+        #
+        # We only need:
+        #
+        # 3845518169410282443
+
+        match = re.match(
+            r"^(\d+)",
+            story_media_id
+        )
+
+        if not match:
+
+            return None
+
+        return match.group(
+            1
+        )
+
+    # ============================================================
+    # Highlight
+    # ============================================================
+
+    def _download_highlight(
+        self,
+        url: str,
+    ) -> list[MediaFile]:
+
+        # ========================================================
+        # Highlight ID
+        # ========================================================
+
+        match1 = HIGHLIGHT_RE.search(
+            url
+        )
+
+        if match1:
+
+            highlight_id = (
+                match1.group(1)
+            )
+
+        else:
+
+            highlight_id = (
+                self
+                .get_highlight_id_from_url(
+                    url
+                )
+            )
+
+        if not highlight_id:
+
+            raise InstagramError(
+                "URL هایلایت معتبر نیست."
+            )
+
+        print()
+        print(
+            "Highlight ID:",
+            highlight_id
+        )
+
+        # ========================================================
+        # Story Media ID
+        # ========================================================
+
+        story_media_id = (
+            self
+            .get_story_media_id_from_url(
+                url
+            )
+        )
+
+        if story_media_id:
+
+            print(
+                "Requested Story Media ID:",
+                story_media_id
+            )
+
+        # ========================================================
+        # Session
+        # ========================================================
+
+        session = (
+            self.loader.context._session
+        )
+
+        csrf_token = self._get_cookie(
+            "csrftoken"
+        )
+
+        headers = {
+
+            "User-Agent":
+                session.headers.get(
+                    "User-Agent",
+                    "Mozilla/5.0",
+                ),
+
+            "X-IG-App-ID":
+                "936619743392459",
+
+            "Referer":
+                "https://www.instagram.com/",
+
+            "Accept":
+                "*/*",
+        }
+
+        if csrf_token:
+
+            headers["X-CSRFToken"] = (
+                csrf_token
+            )
+
+        # ========================================================
+        # API
+        # ========================================================
+
+        api_url = (
+            "https://www.instagram.com/"
+            "api/v1/feed/reels_media/"
+            f"?reel_ids=highlight:{highlight_id}"
+        )
+
+        print()
+        print(
+            "Highlight API:"
+        )
+        print(
+            api_url
+        )
+
+        try:
+
+            response = session.get(
+
+                api_url,
+
+                headers=headers,
+
                 timeout=(
                     20,
                     self.request_timeout_seconds,
                 ),
             )
-
-            self._raise_for_instagram_response(
-                response,
-                "getting highlight metadata",
-            )
-
-            try:
-
-                data = response.json()
-
-            except ValueError as exc:
-
-                raise InstagramError(
-                    "پاسخ Instagram برای "
-                    "هایلایت معتبر نبود."
-                ) from exc
-
-        except InstagramError:
-            raise
 
         except requests.exceptions.Timeout as exc:
 
@@ -1495,53 +1742,221 @@ class InstagramClient:
         except requests.exceptions.RequestException as exc:
 
             raise InstagramError(
-                "خطا در ارتباط با Instagram "
-                f"برای هایلایت: {exc}"
+                f"خطا در ارتباط با Instagram: "
+                f"{exc}"
             ) from exc
 
-        highlight = (
-            (data.get("reels") or {})
-            .get(
-                f"highlight:{highlight_id}"
-            )
+        print(
+            "Highlight API status:",
+            response.status_code
         )
 
-        # Fallback for alternate response key formats
-        if not highlight:
+        self._raise_for_instagram_response(
+            response,
+            "getting highlight metadata",
+        )
 
-            reels = data.get("reels") or {}
+        try:
 
-            if isinstance(
-                reels,
-                dict,
-            ):
+            data = response.json()
 
-                for key, value in reels.items():
+        except ValueError as exc:
 
-                    if str(key).endswith(
-                        str(highlight_id)
-                    ):
-
-                        highlight = value
-                        break
-
-        if not highlight:
-
-            raise InstagramError(
-                "اطلاعات هایلایت پیدا نشد."
+            print(
+                response.text[:1000]
             )
 
+            raise InstagramError(
+                "پاسخ Instagram برای "
+                "هایلایت JSON معتبر نبود."
+            ) from exc
+
+        # ========================================================
+        # Find Highlight
+        # ========================================================
+
+        reels = data.get(
+            "reels",
+            {}
+        )
+
+        if not isinstance(
+            reels,
+            dict
+        ):
+
+            raise InstagramError(
+                "ساختار پاسخ Highlight "
+                "معتبر نیست."
+            )
+
+        highlight = reels.get(
+            f"highlight:{highlight_id}"
+        )
+
+        # --------------------------------------------------------
+        # Fallback
+        # --------------------------------------------------------
+
+        if not highlight:
+
+            for key, value in reels.items():
+
+                if str(key).endswith(
+                    str(highlight_id)
+                ):
+
+                    highlight = value
+
+                    break
+
+        if not highlight:
+
+            print(
+                "Available reel keys:",
+                list(reels.keys())
+            )
+
+            raise InstagramError(
+                "اطلاعات Highlight "
+                "پیدا نشد."
+            )
+
+        # ========================================================
+        # Items
+        # ========================================================
+
         items = (
-            highlight.get("items")
+            highlight.get(
+                "items"
+            )
             or []
+        )
+
+        print(
+            "Highlight items:",
+            len(items)
         )
 
         if not items:
 
             raise InstagramError(
-                "هایلایت خالی است یا "
-                "آیتمی قابل دسترسی نیست."
+                "هایلایت هیچ Story "
+                "قابل دسترسی ندارد."
             )
+
+        # ========================================================
+        # Find requested Story
+        # ========================================================
+
+        selected_item = None
+
+        if story_media_id:
+
+            print()
+            print(
+                "Searching requested story..."
+            )
+
+            for item in items:
+
+                if not isinstance(
+                    item,
+                    dict
+                ):
+
+                    continue
+
+                pk = str(
+                    item.get(
+                        "pk",
+                        ""
+                    )
+                )
+
+                item_id = str(
+                    item.get(
+                        "id",
+                        ""
+                    )
+                )
+
+                print(
+                    "Checking:",
+                    pk,
+                    "|",
+                    item_id
+                )
+
+                if pk == story_media_id:
+
+                    selected_item = item
+
+                    break
+
+                if item_id == story_media_id:
+
+                    selected_item = item
+
+                    break
+
+                if item_id.startswith(
+                    story_media_id + "_"
+                ):
+
+                    selected_item = item
+
+                    break
+
+        # ========================================================
+        # Result selection
+        # ========================================================
+
+        if story_media_id:
+
+            if not selected_item:
+
+                print()
+                print(
+                    "❌ Requested Story "
+                    "was not found."
+                )
+
+                print(
+                    "Requested:",
+                    story_media_id
+                )
+
+                print()
+                print(
+                    "Available stories:"
+                )
+
+                for item in items:
+
+                    print(
+                        "PK:",
+                        item.get("pk"),
+                        "| ID:",
+                        item.get("id")
+                    )
+
+                raise InstagramError(
+                    "Story موردنظر داخل "
+                    "Highlight پیدا نشد."
+                )
+
+            items_to_download = [
+                selected_item
+            ]
+
+        else:
+
+            items_to_download = items
+
+        # ========================================================
+        # Download
+        # ========================================================
 
         job_dir = self._new_job_dir()
 
@@ -1549,26 +1964,36 @@ class InstagramClient:
 
         username = str(
             (
-                highlight.get("user")
+                highlight.get(
+                    "user"
+                )
                 or {}
-            ).get("username")
+            ).get(
+                "username"
+            )
             or "highlight"
         )
 
         try:
 
             for index, item in enumerate(
-                items,
+                items_to_download,
                 start=1,
             ):
 
-                media_type = (
-                    item.get("media_type")
+                media_type = item.get(
+                    "media_type"
                 )
 
-                # -------------------------
-                # Highlight video
-                # -------------------------
+                print()
+                print(
+                    "Media type:",
+                    media_type
+                )
+
+                # =================================================
+                # VIDEO
+                # =================================================
 
                 if media_type == 2:
 
@@ -1580,7 +2005,29 @@ class InstagramClient:
                     )
 
                     if not versions:
+
+                        print(
+                            "No video_versions."
+                        )
+
                         continue
+
+                    versions = sorted(
+                        versions,
+                        key=lambda x:
+                            (
+                                x.get(
+                                    "width",
+                                    0
+                                )
+                                *
+                                x.get(
+                                    "height",
+                                    0
+                                )
+                            ),
+                        reverse=True,
+                    )
 
                     media_url = (
                         versions[0].get(
@@ -1589,16 +2036,37 @@ class InstagramClient:
                     )
 
                     if not media_url:
+
                         continue
+
+                    print()
+                    print(
+                        "================================"
+                    )
+                    print(
+                        "VIDEO CDN URL:"
+                    )
+                    print(
+                        media_url
+                    )
+                    print(
+                        "================================"
+                    )
+
+                    media_id = str(
+                        item.get(
+                            "pk"
+                        )
+                        or story_media_id
+                        or index
+                    )
 
                     path = (
                         job_dir
-                        / (
-                            f"{username}_"
-                            f"highlight_"
-                            f"{highlight_id}_"
-                            f"{index}.mp4"
-                        )
+                        /
+                        f"{username}_"
+                        f"story_"
+                        f"{media_id}.mp4"
                     )
 
                     self._download_url(
@@ -1613,9 +2081,9 @@ class InstagramClient:
                         )
                     )
 
-                # -------------------------
-                # Highlight photo
-                # -------------------------
+                # =================================================
+                # PHOTO
+                # =================================================
 
                 elif media_type == 1:
 
@@ -1630,7 +2098,29 @@ class InstagramClient:
                     )
 
                     if not candidates:
+
+                        print(
+                            "No image candidates."
+                        )
+
                         continue
+
+                    candidates = sorted(
+                        candidates,
+                        key=lambda x:
+                            (
+                                x.get(
+                                    "width",
+                                    0
+                                )
+                                *
+                                x.get(
+                                    "height",
+                                    0
+                                )
+                            ),
+                        reverse=True,
+                    )
 
                     media_url = (
                         candidates[0].get(
@@ -1639,16 +2129,37 @@ class InstagramClient:
                     )
 
                     if not media_url:
+
                         continue
+
+                    print()
+                    print(
+                        "================================"
+                    )
+                    print(
+                        "IMAGE CDN URL:"
+                    )
+                    print(
+                        media_url
+                    )
+                    print(
+                        "================================"
+                    )
+
+                    media_id = str(
+                        item.get(
+                            "pk"
+                        )
+                        or story_media_id
+                        or index
+                    )
 
                     path = (
                         job_dir
-                        / (
-                            f"{username}_"
-                            f"highlight_"
-                            f"{highlight_id}_"
-                            f"{index}.jpg"
-                        )
+                        /
+                        f"{username}_"
+                        f"story_"
+                        f"{media_id}.jpg"
                     )
 
                     self._download_url(
@@ -1663,11 +2174,18 @@ class InstagramClient:
                         )
                     )
 
+                else:
+
+                    print(
+                        "Unsupported media type:",
+                        media_type
+                    )
+
             if not result:
 
                 raise InstagramError(
-                    "هایلایت خالی است یا "
-                    "فایل قابل دانلود پیدا نشد."
+                    "فایل Media قابل دانلود "
+                    "پیدا نشد."
                 )
 
             return result
