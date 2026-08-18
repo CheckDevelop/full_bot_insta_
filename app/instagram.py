@@ -1121,6 +1121,8 @@ class InstagramClient:
 
                 headers=headers,
 
+                cookies=session,
+
                 timeout=15,
             )
 
