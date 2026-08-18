@@ -1384,11 +1384,29 @@ class InstagramClient:
                     reverse=True,
                 )
 
-                media_url = (
-                    versions[0].get(
-                        "url"
-                    )
+                versions = sorted(
+                    versions,
+                    key=lambda x: (
+                        x.get("width",0)
+                        *
+                        x.get("height",0)
+                    ),
+                    reverse=True,
                 )
+                
+                
+                for v in versions:
+                
+                    url = v.get("url")
+                
+                    if url and ".mp4" in url:
+                
+                        media_url = url
+                        break
+                
+                else:
+                
+                    media_url = versions[0].get("url")
 
                 path = (
                     job_dir
