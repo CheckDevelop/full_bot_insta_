@@ -605,7 +605,7 @@ class InstagramClient:
     ) -> None:
 
         headers = {
-        
+
             "User-Agent":
                 self.loader.context
                 ._session
@@ -613,19 +613,9 @@ class InstagramClient:
                     "User-Agent",
                     "Mozilla/5.0",
                 ),
-        
+
             "Referer":
                 "https://www.instagram.com/",
-        
-            "Accept":
-                "*/*",
-        
-            "Accept-Language":
-                "en-US,en;q=0.9",
-        
-            "Origin":
-                "https://www.instagram.com",
-        
         }
 
         try:
@@ -1384,29 +1374,11 @@ class InstagramClient:
                     reverse=True,
                 )
 
-                versions = sorted(
-                    versions,
-                    key=lambda x: (
-                        x.get("width",0)
-                        *
-                        x.get("height",0)
-                    ),
-                    reverse=True,
+                media_url = (
+                    versions[0].get(
+                        "url"
+                    )
                 )
-                
-                
-                for v in versions:
-                
-                    url = v.get("url")
-                
-                    if url and ".mp4" in url:
-                
-                        media_url = url
-                        break
-                
-                else:
-                
-                    media_url = versions[0].get("url")
 
                 path = (
                     job_dir
