@@ -605,7 +605,7 @@ class InstagramClient:
     ) -> None:
 
         headers = {
-
+        
             "User-Agent":
                 self.loader.context
                 ._session
@@ -613,9 +613,19 @@ class InstagramClient:
                     "User-Agent",
                     "Mozilla/5.0",
                 ),
-
+        
             "Referer":
                 "https://www.instagram.com/",
+        
+            "Accept":
+                "*/*",
+        
+            "Accept-Language":
+                "en-US,en;q=0.9",
+        
+            "Origin":
+                "https://www.instagram.com",
+        
         }
 
         try:
