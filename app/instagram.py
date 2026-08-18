@@ -967,104 +967,6 @@ class InstagramClient:
             raise
 
     # ============================================================
-    # Find User Id
-    # ============================================================
-    def _get_user_id_from_html(
-        self,
-        username: str,
-    ) -> int | None:
-    
-        url = (
-            f"https://www.instagram.com/{username}/"
-        )
-    
-        session = (
-            self.loader.context._session
-        )
-    
-        headers = {
-    
-            "User-Agent":
-                session.headers.get(
-                    "User-Agent",
-                    "Mozilla/5.0",
-                ),
-    
-            "Referer":
-                "https://www.instagram.com/",
-    
-            "Accept":
-                "text/html,*/*",
-    
-        }
-    
-    
-        try:
-    
-            response = session.get(
-                url,
-                headers=headers,
-                timeout=30,
-            )
-    
-        except requests.RequestException as exc:
-    
-            raise InstagramError(
-                f"خطا در دریافت HTML پروفایل: {exc}"
-            )
-    
-    
-        self._raise_for_instagram_response(
-            response,
-            "getting profile HTML"
-        )
-    
-    
-        html = response.text
-    
-    
-        patterns = [
-    
-            # جدید
-            r'"profile_id":"(\d+)"',
-    
-            # user object
-            r'"user_id":"(\d+)"',
-    
-            # graphql data
-            r'"id":"(\d+)","username":"'
-            + re.escape(username),
-    
-            # legacy
-            r'"owner_id":"(\d+)"',
-    
-        ]
-    
-    
-        for pattern in patterns:
-    
-            match = re.search(
-                pattern,
-                html,
-                re.IGNORECASE,
-            )
-    
-            if match:
-    
-                user_id = int(
-                    match.group(1)
-                )
-    
-                logger.info(
-                    "User ID found from HTML: %s",
-                    user_id,
-                )
-    
-                return user_id
-    
-    
-        return None
-    # ============================================================
     # Find Story Item
     # ============================================================
 
@@ -1287,28 +1189,6 @@ class InstagramClient:
             print(
                 "Trying HTML profile..."
             )
-        
-        
-            owner_id = (
-                self
-                ._get_user_id_from_html(
-                    username
-                )
-            )
-        
-        
-            if owner_id:
-        
-                print(
-                    "Owner ID from HTML:",
-                    owner_id
-                )
-        
-            else:
-        
-                raise InstagramError(
-                    "User ID از HTML پیدا نشد."
-                )
 
         print(
             "Owner ID:",
