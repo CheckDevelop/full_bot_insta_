@@ -967,75 +967,102 @@ class InstagramClient:
             raise
 
     # ============================================================
-    # Normal Story
+    # Find User Id
     # ============================================================
-    def _extract_user_id_from_html(self, url: str) -> int | None:
-        """
-        استخراج user_id از HTML صفحه استوری
-        """
-        session = self.loader.context._session
-        print(session)
-        
+    def _get_user_id_from_html(
+        self,
+        username: str,
+    ) -> int | None:
+    
+        url = (
+            f"https://www.instagram.com/{username}/"
+        )
+    
+        session = (
+            self.loader.context._session
+        )
+    
         headers = {
-            "User-Agent": session.headers.get("User-Agent", "Mozilla/5.0"),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Referer": "https://www.instagram.com/",
+    
+            "User-Agent":
+                session.headers.get(
+                    "User-Agent",
+                    "Mozilla/5.0",
+                ),
+    
+            "Referer":
+                "https://www.instagram.com/",
+    
+            "Accept":
+                "text/html,*/*",
+    
         }
-        
+    
+    
         try:
-            response = requests.get(
+    
+            response = session.get(
                 url,
                 headers=headers,
-                cookies=session.cookies,
-                timeout=15,
+                timeout=30,
             )
-            
-            html_content = response.text
-            
-            # روش 1: پترن دقیق با فاصله‌گذاری انعطاف‌پذیر
-            pattern1 = r'"page_logging"\s*:\s*\{\s*"name"\s*:\s*"StoriesPage"\s*,\s*"params"\s*:\s*\{\s*"page_id"\s*:\s*"StoriesPage_\d+"\s*\}\s*\}\s*,\s*"user_id"\s*:\s*"(\d+)"\s*,\s*"preload"\s*:\s*true\s*\}'
-            
-            match = re.search(pattern1, html_content)
+    
+        except requests.RequestException as exc:
+    
+            raise InstagramError(
+                f"خطا در دریافت HTML پروفایل: {exc}"
+            )
+    
+    
+        self._raise_for_instagram_response(
+            response,
+            "getting profile HTML"
+        )
+    
+    
+        html = response.text
+    
+    
+        patterns = [
+    
+            # جدید
+            r'"profile_id":"(\d+)"',
+    
+            # user object
+            r'"user_id":"(\d+)"',
+    
+            # graphql data
+            r'"id":"(\d+)","username":"'
+            + re.escape(username),
+    
+            # legacy
+            r'"owner_id":"(\d+)"',
+    
+        ]
+    
+    
+        for pattern in patterns:
+    
+            match = re.search(
+                pattern,
+                html,
+                re.IGNORECASE,
+            )
+    
             if match:
-                return int(match.group(1))
-            
-            # روش 2: جستجوی ساده‌تر - فقط page_logging و user_id نزدیک به هم
-            pattern2 = r'"page_logging".{0,200}"user_id"\s*:\s*"(\d+)"'
-            match = re.search(pattern2, html_content, re.DOTALL)
-            if match:
-                return int(match.group(1))
-            
-            # روش 3: جستجوی user_id بعد از StoriesPage
-            pattern3 = r'"StoriesPage".{0,300}"user_id"\s*:\s*"(\d+)"'
-            match = re.search(pattern3, html_content, re.DOTALL)
-            if match:
-                return int(match.group(1))
-            
-            # روش 4: پیدا کردن بزرگترین عدد که user_id باشه (بیشتر از 8 رقم)
-            pattern4 = r'"user_id"\s*:\s*"(\d{8,})"'
-            matches = re.findall(pattern4, html_content)
-            if matches:
-                # فیلتر کردن ID های کوچک (مثل 0, 1 و غیره)
-                valid_ids = [m for m in matches if len(m) > 7]
-                if valid_ids:
-                    return int(valid_ids[0])
-            
-            # روش 5: استخراج از window._sharedData یا __CONFIG__
-            config_pattern = r'window\._sharedData\s*=\s*({.+?});</script>'
-            match = re.search(config_pattern, html_content, re.DOTALL)
-            if match:
-                try:
-                    data = json.loads(match.group(1))
-                    user_id = data.get('config', {}).get('viewer', {}).get('id')
-                    if user_id:
-                        return int(user_id)
-                except:
-                    pass
-            
-        except Exception as exc:
-            print(f"Error extracting user_id: {exc}")
-            
+    
+                user_id = int(
+                    match.group(1)
+                )
+    
+                logger.info(
+                    "User ID found from HTML: %s",
+                    user_id,
+                )
+    
+                return user_id
+    
+    
         return None
     # ============================================================
     # Find Story Item
@@ -1252,18 +1279,36 @@ class InstagramClient:
             )
 
         if owner_id is None:
-            owner_id = self._extract_user_id_from_html(url)
-            print("Owner ID = ", owner_id)
+
             print(
                 "Owner ID not found in URL."
             )
-
-        if owner_id is None:
-
-            raise InstagramError(
-                "Owner ID این Story "
-                "پیدا نشد."
+        
+            print(
+                "Trying HTML profile..."
             )
+        
+        
+            owner_id = (
+                self
+                ._get_user_id_from_html(
+                    username
+                )
+            )
+        
+        
+            if owner_id:
+        
+                print(
+                    "Owner ID from HTML:",
+                    owner_id
+                )
+        
+            else:
+        
+                raise InstagramError(
+                    "User ID از HTML پیدا نشد."
+                )
 
         print(
             "Owner ID:",
