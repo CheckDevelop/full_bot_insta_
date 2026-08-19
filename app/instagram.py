@@ -1119,9 +1119,10 @@ class InstagramClient:
 
         try:
 
-            response = session.get(
-                api_url,
+            response = requests.get(
+                url,
                 headers=headers,
+                cookies=session.cookies,
                 timeout=30,
             )
         except requests.RequestException as exc:
