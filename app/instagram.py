@@ -175,7 +175,7 @@ class InstagramClient:
 
             download_comments=False,
 
-            INSTAGRAM_USER_AGENT,
+            user_agent=INSTAGRAM_USER_AGENT,
 
             max_connection_attempts=1,
 
