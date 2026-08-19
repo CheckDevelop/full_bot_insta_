@@ -1122,6 +1122,7 @@ class InstagramClient:
             response = session.get(
                 api_url,
                 headers=headers,
+                cookies=session.cookies,
                 timeout=15,
             )
 
