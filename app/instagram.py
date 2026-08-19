@@ -1124,15 +1124,6 @@ class InstagramClient:
                 headers=headers,
                 timeout=30,
             )
-
-    """        
-            requests.get(
-                api_url,
-                headers=headers,
-                cookies=session.cookies,
-                timeout=15,
-            )
-    """
         except requests.RequestException as exc:
 
             raise InstagramError(
