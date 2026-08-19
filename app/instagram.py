@@ -165,17 +165,13 @@ class InstagramClient:
         self,
     ) -> instaloader.Instaloader:
 
-        INSTAGRAM_USER_AGENT = (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:153.0) "
-            "Gecko/20100101 Firefox/153.0"
-        )
         loader = instaloader.Instaloader(
 
             save_metadata=False,
 
             download_comments=False,
 
-            user_agent=INSTAGRAM_USER_AGENT,
+            user_agent="Mozilla/5.0",
 
             max_connection_attempts=1,
 
@@ -266,7 +262,7 @@ class InstagramClient:
             {
 
                 "User-Agent":
-                    INSTAGRAM_USER_AGENT,
+                    "Mozilla/5.0",
 
                 "X-IG-App-ID":
                     "936619743392459",
@@ -1120,11 +1116,16 @@ class InstagramClient:
         try:
 
             response = requests.get(
-                url,
+
+                api_url,
+
                 headers=headers,
+
                 cookies=session.cookies,
-                timeout=30,
+
+                timeout=15,
             )
+
         except requests.RequestException as exc:
 
             raise InstagramError(
